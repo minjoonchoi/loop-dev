@@ -27,6 +27,11 @@ according to this environment; the other CLI performs independent reviews.
 The user provides the desired outcome; derive context and ask only unresolved
 human-owned decisions before implementation. Restore an existing goal from its
 persisted state instead of asking the user to repeat context or operating commands.
+Keep one local analysis session for this conversation, across all its goals. Before
+each follow-up, read its session context and reuse unchanged analysis and answered
+decisions. After investigation or edits, save affected topic summaries with source
+dependencies using `.loop/rules/context.md`; refresh stale topics only. Carry the
+returned session ID into subsequent goals yourself; never ask the user to manage it.
 Discover context yourself. Use `python3 .loop/loop.py` for persistent gates and handoffs.
 Existing repository instructions still apply; resolve conflicts during preflight.
 Questions, explanations and explicitly read-only or planning-only requests stay

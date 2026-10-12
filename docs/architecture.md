@@ -26,6 +26,7 @@ to the conversation model, not a keyword parser or provider event hook.
 | Provider entry | Managed blocks in AGENTS.md and CLAUDE.md |
 | Goal completeness | `contract.py` validates structural traceability and decisions |
 | Context reconstruction | `context.py` derives repository inventory, runtime evidence and next action |
+| Reusable conversation analysis | `session.py` stores topics, decisions, dependency fingerprints and goal history |
 | State/gates/recovery | `engine.py` |
 | Independent review | `providers.py` invokes the opposite provider and validates structured output |
 | Bounded subprocesses | `process.py`, argv arrays, stdin EOF, process-group timeout |
@@ -97,6 +98,56 @@ context-feeding with an evidence-driven agent loop.
 Notes are append-only through the CLI and can change tactics, not the frozen scope,
 commands, business rules or authority. A discovery that truly requires a new business
 decision becomes a blocker and a separate preflight goal rather than a mid-run question.
+
+## Analysis reused within a conversation
+
+A local session spans multiple goals in the same Claude Code or Codex conversation.
+`init` creates a session when none is supplied; subsequent goals pass `--session`.
+An optional `session open` supports analysis before the first goal. The agent carries
+the returned ID in conversation handoffs and goal state. New conversations use new
+IDs; the engine never selects the latest cache as a proxy for session ownership.
+Explicitly resuming a goal restores its binding. Providers must match the binding.
+There is no undocumented host-session lookup, global pointer or vendor-specific hook.
+
+`session.json` contains indexed topic summaries and original evidence, scope/basis
+of decisions, linked goals and the last observation. `context.json` separates reusable
+entries, stale entries with changed dependencies, other-goal entries and historical
+goal records. Goal `context` embeds this view, so it is available before every prompt's
+investigation/clarification. Decisions and execution notes are archived automatically;
+passing preflight/review evidence updates one broad fallback summary per goal. Fresh
+implementation evidence replaces its preflight summary. The agent also persists focused
+topics while investigating, answering decisions and editing to preserve granular reuse.
+
+Dependencies are explicit file paths or directory prefixes. Prefixes detect additions,
+deletions and renames; exact missing paths can record absence. Fingerprints include
+working-tree changes and rule hashes, not just HEAD. All topics are reconciled after a
+branch or rule change. A content-preserving commit retains code analysis, while the
+existing completion gate still rejects changed HEAD. Creating `.loop/goals/` metadata
+does not invalidate root-wide source summaries; an explicitly named goal file can still
+be a dependency. Cached manifest excerpts are read again only if their hashes change.
+
+`remember --observed` rejects a repository revision changed since the analysis context
+was read. Updates preserve previous entries in history. Refresh only classifies freshness;
+it cannot re-stamp a stale summary. The agent re-investigates relevant changed dependencies
+and writes a new summary. Unaffected topics retain their evidence/time. It does not
+re-investigate unrelated historical topics merely because they are stale.
+
+Decisions preserve `user`, `repository-rule` or `delegated` basis and an `applies_to`
+boundary. Session-wide preferences can survive unrelated code edits; goal-scoped answers
+are presented separately and never promoted automatically. Earlier applicable answers
+are carried into new contracts instead of being asked again. Whether a new product scope
+fits an answer remains a semantic judgment for the agent and preflight reviewer.
+
+Memory is derived context, not an authority source or verification pass. Final tests and
+independent reviews remain fresh; reviewers receive reusable summaries as navigation
+hints and must inspect actual behavior. Correct invalidation depends on complete declared
+dependencies. Ignored application source and external runtime/service changes are outside
+that model; explicitly declared ignored rules are hashed, and external facts require fresh
+checks. Rules instruct agents to record the complete read set and directory-level absence.
+
+All memory is repository-local under the existing ignored `.loop/state/` tree, protected
+by the common CLI lock and atomic writes. It does not enter Git snapshots or change frozen
+contracts. Older goal state acquires a new stable session binding on first context read.
 
 ## Review protocol
 

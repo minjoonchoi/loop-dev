@@ -28,6 +28,14 @@ matching draft/ready goal from the conversation and stored state when identifiab
 Otherwise choose a meaningful safe goal ID yourself. Do not ask the user to supply
 IDs, JSON, file locations or script commands merely to operate the harness.
 
+Keep the same local `session_id` throughout this conversation, including after a goal
+completes. Before investigating each follow-up or asking anything, load `context`
+for the current goal or `session context SESSION_ID`. Read `reusable`, `stale`, and
+the earlier decisions in `goal_history`. Reuse unchanged facts/answers; investigate
+only missing topics and affected dependencies. Follow `context.md` to save updates.
+The last goal's state stores the session ID for recovery after context compaction.
+Never guess session ownership from the newest file or a provider-wide global pointer.
+
 A broad desired outcome starts discovery and preflight, not speculative code edits.
 Derive the missing technical context and acceptance criteria. Ask only necessary
 human-owned decisions before start, following the policy below. Do not expand the
@@ -56,12 +64,18 @@ python3 .loop/loop.py init goal-id --title "Desired result" --implementer codex
 
 Use `claude` when working inside Claude Code. Read the returned context file.
 For a continuing goal, run `context goal-id` instead of initializing again.
+The first `init` creates a local session and returns its ID. For a **new goal in this
+same conversation**, pass `--session SESSION_ID` to `init`; do not create a new session
+for each request. If analysis starts before any goal, `session open --provider codex`
+creates the conversation's session. Keep its ID in conversation handoffs. The agent
+performs these actions; the user only supplies goals and unresolved human decisions.
 
 1. Define observable target behavior, users, scope, exclusions, requirements and
    acceptance scenarios before judging the current implementation.
-2. Inspect the repository inventory, manifests, applicable rules, actual source,
-   callers, tests, data and external interfaces. Run bounded, read-only discovery
-   commands as needed. Inspect official documentation for uncertain integrations.
+2. Reuse applicable current session analysis first. Inspect the inventory, rules,
+   source, callers, tests, data and interfaces for missing or stale topics. Record
+   concise summaries and dependencies with `session remember`. Run bounded, read-only
+   discovery commands as needed. Inspect official documentation for uncertain integrations.
 3. Put findings and per-requirement gaps in `discovery.json`. Put desired behavior
    and acceptance in `contract.json`. Empty, partial, mock-only or broken code means
    more work. It is never a reason to silently downgrade the target to an MVP.
@@ -74,6 +88,11 @@ For a continuing goal, run `context goal-id` instead of initializing again.
 ## 2. Resolve only human-owned uncertainty
 
 Distinguish information you can discover from decisions only the user can make.
+Check prior answers and their original scope/basis first. Do not repeat an answered
+question because a new prompt or goal began. Resolve technical cache staleness
+yourself; a changed file alone is not a reason to ask the user again. Carry applicable
+answers into the new contract with their provenance. A goal-specific answer is not
+new session-wide authorization; a changed product boundary may need a new decision.
 Resolve technical facts yourself. Recommend a default for implementation choices
 and record any already-delegated discretion. Ask a consolidated, focused round
 about materially unresolved product behavior, business rules, allowed external
@@ -118,10 +137,12 @@ product code before start. Goal/discovery drafting is preflight work.
 
 Repeat until the goal is complete:
 
-1. Run `context goal-id` and read its file, especially `next`, `latest_gate`, notes
-   and unfinished acceptance. This reconstructs the next prompt automatically.
-2. Investigate technical gaps yourself. Trace the relevant end-to-end path, affected
-   consumers, existing abstractions and dependencies. Refresh evidence after edits.
+1. Run `context goal-id` and read its file, especially `session.reusable`,
+   `session.stale`, `next`, `latest_gate`, notes and unfinished acceptance.
+   This reconstructs the next prompt automatically without a new repository-wide analysis.
+2. Investigate technical gaps yourself using saved end-to-end paths and dependencies.
+   After edits, refresh context and update affected analysis topics from the actual
+   changes. Do not simply restamp old summaries or re-investigate unaffected topics.
 3. Implement the next milestone completely. Include integration, error handling,
    migration/compatibility and documentation required by the target. Do not leave a
    stub, fake success, disabled test or disconnected screen as finished work.
@@ -164,6 +185,7 @@ the exact recovery condition. New requirements start a new preflight goal.
   authorized post-verification publishing as delivery and report its actual result.
 - For context loss, reopen the same provider and run `context goal-id`; continue
   from persisted milestones, findings and notes without asking the user to repeat them.
+  Recover `session_id` too and use it for later goals in this same conversation.
 - For an interrupted gate, inspect logs, call `checkpoint`/`finish` to detect the
   interruption if necessary, then `resume`. Consumed attempts stay consumed.
 - `block --reason` records an unavoidable obstacle. `abort --reason` preserves all

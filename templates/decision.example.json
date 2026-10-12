@@ -1,0 +1,11 @@
+{
+  "id": "local-delivery-policy",
+  "kind": "decision",
+  "scope": "session",
+  "area": "delivery",
+  "basis": "user",
+  "applies_to": "Replace with the exact goals/actions covered by the original answer",
+  "summary": "Replace with the user's actual answer; this example conveys no authority",
+  "evidence": ["Replace with the original answer reference and its context"],
+  "paths": []
+}

@@ -39,6 +39,11 @@ python3 loop-dev/scripts/install.py --target /absolute/path/to/project
 기존 작업에 대한 후속 요청은 저장된 상태에서 이어갑니다. 설명·질문·읽기 전용 검토나
 “계획만 세워 줘”라는 요청은 해당 범위에서 처리하고 개발 실행을 새로 시작하지 않습니다.
 
+같은 Claude/Codex 세션에서 요청이 반복되면 **로컬에 저장한 코드 분석·구현 현황·이전 답변을
+먼저 재사용**합니다. 다음 목표도 같은 세션 기록에 연결하고, 근거 파일이 바뀐 관련 항목만
+다시 확인해 최신화합니다. 사용자에게 매번 코드 구조나 이미 답한 결정을 다시 설명하도록
+요구하지 않습니다. 분석 저장·조회·세션 ID 연결은 에이전트가 수행합니다.
+
 설치는 기존 `AGENTS.md`와 `CLAUDE.md`를 보존하고 관리 블록만 추가합니다.
 같은 버전의 재설치는 동일한 결과를 유지하며, 하네스 파일의 로컬 수정은 덮어쓰지 않습니다.
 전역 설정이나 훅을 변경하지 않습니다.
@@ -97,7 +102,10 @@ flowchart TD
 
 | 명령 | 동작 |
 | --- | --- |
-| `init ID --title TITLE --implementer claude\|codex` | 목표 초안과 진단·상태 생성 |
+| `init ID --title TITLE --implementer claude\|codex [--session SESSION]` | 목표 생성; 후속 목표는 같은 세션을 연결 |
+| `session open --provider claude\|codex` | 목표 전에 조사가 필요한 경우 세션 생성 |
+| `session context SESSION [--goal ID]` | 재사용 가능한 분석·변경된 근거·이전 답변 조회 |
+| `session remember SESSION --input PATH --observed REVISION` | 조사한 주제·결정과 파일 의존성을 저장·갱신 |
 | `context ID` / `status ID` | 최신 맥락과 다음 행동 갱신·조회 |
 | `validate ID` | 명세 완결성과 요구사항 연결 검증 |
 | `doctor ID` | 두 CLI 설치·버전 확인 |
@@ -122,9 +130,16 @@ flowchart TD
 | `.loop/templates/` | 목표·진단 예시 | 포함 |
 | `.loop/goals/<id>/` | `contract.json`, `discovery.json` | 포함 권장 |
 | `.loop/state/<id>/` | 상태·동결 사본·맥락·검증 로그·이벤트 | 제외 |
+| `.loop/state/sessions/<session-id>/` | 분석 주제·근거 해시·결정 범위·목표 이력·이전 버전 | 제외 |
 
 목표와 규칙에 자격 증명을 저장하지 않습니다. 실행 상태는 해당 프로젝트의 로컬 파일로
 보존되므로 다른 컴퓨터로 이어갈 때는 의도적으로 상태도 함께 옮겨야 합니다.
+
+분석 캐시는 수정·추가·삭제·이름 변경과 규칙·브랜치 변경을 감지합니다. 단순 조회로 오래된
+요약을 최신으로 표시하지 않으며, 에이전트가 관련 변경을 확인한 뒤 요약을 갱신합니다.
+유효한 이전 답변은 원래 적용 범위에서 재사용합니다. 새로운 목표의 수준과 최종 검증은
+독립적으로 유지합니다. 세션 연결은 공통 진입 규칙을 따르는 대화 에이전트가 수행하며,
+호스트의 비공개 세션 API나 전역 훅에 의존하지 않습니다.
 
 ## 개발 및 검증
 

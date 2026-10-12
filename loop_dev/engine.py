@@ -9,13 +9,14 @@ import uuid
 from . import context, providers
 from .contract import identifier, template, validate
 from .process import execute
+from .session import Session
 from .storage import (LoopError, digest, engine_digest, head, inside, now, read_json,
                       rule_manifest, snapshot, write_json)
 
 
 class Engine:
     def __init__(self, root, goal_id):
-        if not identifier(goal_id):
+        if not identifier(goal_id) or goal_id == "sessions":
             raise LoopError("Invalid goal ID; use letters, digits, dashes or underscores")
         self.root = root
         self.id = goal_id
@@ -24,9 +25,11 @@ class Engine:
         self.state_path = self.state_dir / "state.json"
         self.active_path = root / ".loop/state/active.json"
 
-    def initialize(self, title, implementer):
+    def initialize(self, title, implementer, session_id=None):
         if self.goal_dir.exists() or self.state_dir.exists():
             raise LoopError(f"Goal already exists: {self.id}")
+        session = Session(self.root, session_id) if session_id else Session.create(self.root, implementer)
+        session.load(implementer)
         self.goal_dir.mkdir(parents=True)
         contract = template(self.id, title, implementer)
         for name in (".loop/rules/workflow.md", "rules/workflow.md", "rules/context.md",
@@ -36,7 +39,7 @@ class Engine:
         write_json(self.goal_dir / "contract.json", contract)
         write_json(self.goal_dir / "discovery.json", {
             "baseline_head": head(self.root), "findings": [], "gaps": []})
-        state = {"version": 1, "id": self.id, "phase": "draft", "created_at": now(),
+        state = {"version": 1, "id": self.id, "session_id": session.id, "phase": "draft", "created_at": now(),
                  "milestones": [], "attempts": {}, "notes": [], "latest_gate": None}
         self.save(state, "initialized")
         return self.refresh()
@@ -90,9 +93,19 @@ class Engine:
         if self.active_path.exists() and read_json(self.active_path).get("goal_id") == self.id:
             self.active_path.unlink()
 
+    def session(self, state, contract, discovery):
+        if not state.get("session_id"):
+            # Upgrade an older goal once, without guessing which conversation owns other caches.
+            state["session_id"] = Session.create(self.root, contract["execution"]["implementer"]).id
+            self.save(state, "session-attached")
+        session = Session(self.root, state["session_id"])
+        session.sync_goal(state, contract, discovery)
+        return session
+
     def refresh(self):
         state, contract, discovery = self.load()
-        value = context.packet(self.root, self.goal_dir, self.state_dir, state, contract, discovery)
+        session_context = self.session(state, contract, discovery).refresh(self.id)
+        value = context.packet(self.root, self.goal_dir, self.state_dir, state, contract, discovery, session_context)
         if state["phase"] != "draft":
             try:
                 self.integrity(state, contract, discovery)
@@ -108,7 +121,8 @@ class Engine:
                 value["next"] = {"action": "report_stale", "instruction": "Files changed after completion; new work needs a new goal."}
         path = self.state_dir / "context.json"
         write_json(path, value)
-        return {"goal": self.id, "phase": state["phase"], "context": str(path), "next": value["next"],
+        return {"goal": self.id, "phase": state["phase"], "session_id": state["session_id"],
+                "context": str(path), "next": value["next"],
                 **{key: value[key] for key in ("integrity_ok", "evidence_current", "integrity_error") if key in value}}
 
     def plan_review(self):
@@ -129,7 +143,9 @@ class Engine:
         if not health["ok"]:
             raise LoopError(f"Both CLIs must be available before starting; inspect {run_dir / 'doctor.json'}")
         ids = [x["id"] for x in contract["target"]["acceptance"]]
-        prompt = context.review_prompt(self.root, contract, discovery, "plan", ids, {}, before)
+        session = self.session(state, contract, discovery)
+        prompt = context.review_prompt(self.root, contract, discovery, "plan", ids, {}, before,
+                                       session_context=session.refresh(self.id))
         review = providers.review(providers.reviewer(contract["execution"]["implementer"]), self.root,
                                   run_dir / "review", prompt, contract["execution"]["review_timeout_seconds"], ids, "plan")
         if snapshot(self.root)["digest"] != before["digest"] or self.inputs(*self.load()[1:]) != inputs:
@@ -141,6 +157,8 @@ class Engine:
         state["latest_gate"] = str(path)
         state["plan_review"] = str(path)
         self.save(state, "plan-reviewed")
+        session.capture_review(state, contract, discovery, report)
+        self.refresh()
         return report
 
     def freeze(self):
@@ -234,7 +252,8 @@ class Engine:
                 if remaining <= 0:
                     raise LoopError("Execution budget exhausted")
                 prompt = context.review_prompt(self.root, contract, discovery, phase, ids, report["checks"],
-                                               state["baseline_snapshot"], state["notes"])
+                                               state["baseline_snapshot"], state["notes"],
+                                               self.session(state, contract, discovery).refresh(self.id))
                 report["review"] = providers.review(
                     providers.reviewer(state["implementer"]), self.root, run_dir / "review", prompt,
                     min(contract["execution"]["review_timeout_seconds"], max(0.01, remaining)), ids, phase)
@@ -272,6 +291,7 @@ class Engine:
             state.update(phase="blocked", retryable=True,
                          block_reason=report["error"] or report["review"]["result"]["summary"])
         self.save(state, "gate-passed" if report["passed"] else "gate-failed")
+        self.session(state, contract, discovery).capture_review(state, contract, discovery, report)
         report["status"] = self.refresh()
         return report
 
@@ -281,7 +301,7 @@ class Engine:
             raise LoopError("Only a running or blocked goal can be blocked")
         state.update(phase="blocked", block_reason=reason, retryable=retryable)
         self.save(state, "blocked")
-        return {"phase": "blocked", "reason": reason, "retryable": retryable}
+        return {"phase": "blocked", "reason": reason, "retryable": retryable, "status": self.refresh()}
 
     def resume(self):
         state, contract, discovery = self.load()
@@ -303,7 +323,7 @@ class Engine:
         state.update(phase="aborted", block_reason=reason, aborted_at=now())
         self.save(state, "aborted")
         self.release()
-        return {"phase": "aborted", "reason": reason, "note": "All code and evidence retained"}
+        return {"phase": "aborted", "reason": reason, "note": "All code and evidence retained", "status": self.refresh()}
 
     def note(self, kind, text, evidence):
         state, contract, discovery = self.load()

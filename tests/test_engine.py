@@ -262,9 +262,9 @@ class RejectionTests(ProjectTest):
                 self.engine.plan_review()
 
     def test_claude_permission_denial_rejected(self):
-        _, contract, _ = self.engine.load()
-        contract["execution"]["implementer"] = "codex"
-        write_json(self.engine.goal_dir / "contract.json", contract)
+        self.engine = Engine(self.root, "codex-denial")
+        self.engine.initialize("Check Claude denial from Codex", "codex")
+        self.fill_contract()
         self.running()
         with patch.dict(os.environ, {"LOOP_TEST_DENIED": "1"}):
             result = self.engine.gate("M1")

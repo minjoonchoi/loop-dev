@@ -104,7 +104,7 @@ def snapshot(root):
     return {"head": head(root), "files": entries, "digest": digest([head(root), entries])}
 
 
-def rule_manifest(root, declared):
+def rule_manifest(root, declared, missing_ok=False):
     names = set(declared)
     names.update(name for name in files(root)
                  if Path(name).name in ("AGENTS.md", "AGENTS.override.md", "CLAUDE.md")
@@ -115,7 +115,7 @@ def rule_manifest(root, declared):
     result = {}
     for name in sorted(names):
         path = inside(root, name)
-        if not path.is_file():
+        if not path.is_file() and not missing_ok:
             raise LoopError(f"Rule file does not exist: {name}")
         result[name] = file_hash(path)
     return result

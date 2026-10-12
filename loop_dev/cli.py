@@ -8,7 +8,8 @@ import sys
 from . import providers
 from .contract import validate
 from .engine import Engine
-from .storage import LoopError, locked, repository
+from .session import Session
+from .storage import LoopError, locked, read_json, repository
 
 
 def parser():
@@ -19,6 +20,17 @@ def parser():
     init.add_argument("goal")
     init.add_argument("--title", required=True)
     init.add_argument("--implementer", choices=("claude", "codex"), required=True)
+    init.add_argument("--session", help="Reuse the current conversation's session ID for the next goal")
+    session = commands.add_parser("session", help="Persist and reuse analysis in the current conversation")
+    session_commands = session.add_subparsers(dest="session_command", required=True)
+    session_commands.add_parser("open").add_argument("--provider", choices=("claude", "codex"), required=True)
+    session_context = session_commands.add_parser("context")
+    session_context.add_argument("session_id")
+    session_context.add_argument("--goal")
+    remember = session_commands.add_parser("remember")
+    remember.add_argument("session_id")
+    remember.add_argument("--input", type=Path, required=True)
+    remember.add_argument("--observed", required=True, help="Revision returned by the context read before analysis")
     for name in ("context", "status", "validate", "doctor", "plan-review", "freeze", "start", "finish", "resume"):
         commands.add_parser(name).add_argument("goal")
     checkpoint = commands.add_parser("checkpoint")
@@ -41,10 +53,21 @@ def main(argv=None):
     try:
         root = repository(args.root)
         with locked(root):
-            engine = Engine(root, args.goal)
             cmd = args.command
+            if cmd == "session":
+                if args.session_command == "open":
+                    output = Session.create(root, args.provider).refresh()
+                else:
+                    session = Session(root, args.session_id)
+                    if args.session_command == "context":
+                        output = session.refresh(args.goal)
+                    else:
+                        output = session.remember(read_json(args.input), args.observed)
+                print(json.dumps(output, ensure_ascii=False, indent=2))
+                return 0
+            engine = Engine(root, args.goal)
             if cmd == "init":
-                output = engine.initialize(args.title, args.implementer)
+                output = engine.initialize(args.title, args.implementer, args.session)
             elif cmd in ("status", "context"):
                 output = engine.refresh()
             elif cmd == "validate":
