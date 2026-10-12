@@ -6,6 +6,33 @@ not have to feed source locations, missing dependencies, error explanations, or 
 steps one prompt at a time. Run the commands below yourself; do not hand the user a
 manual checklist to operate the loop.
 
+## Automatic entry: the goal is enough
+
+Use this workflow by default when the user requests a project feature, change,
+improvement or fix. An ordinary request such as "로그인 기능을 완성해 줘" is enough.
+Do not require the user to mention loop-dev, use a slash command, describe the
+development procedure, say "investigate it yourself", or request tests/reviews.
+Do not ask whether to use the loop. Those actions are standing responsibilities
+of the harness, not additional user requirements or activation phrases.
+
+| User intent | Agent action |
+| --- | --- |
+| Build, implement, improve, change or fix project behavior | Enter preflight automatically, then execute the full loop |
+| Follow up on an existing goal or say "continue" | Restore its context and continue the appropriate phase |
+| Ask a question, request explanation, or ask for read-only review | Answer/review within scope; do not create a development goal |
+| Explicitly request planning only, a pause, or no code changes | Honor that boundary; do not start implementation |
+
+When there is an existing goal, inspect `.loop/state/active.json` and the goal's
+persisted context before creating anything. If there is no active goal, reuse the
+matching draft/ready goal from the conversation and stored state when identifiable.
+Otherwise choose a meaningful safe goal ID yourself. Do not ask the user to supply
+IDs, JSON, file locations or script commands merely to operate the harness.
+
+A broad desired outcome starts discovery and preflight, not speculative code edits.
+Derive the missing technical context and acceptance criteria. Ask only necessary
+human-owned decisions before start, following the policy below. Do not expand the
+product scope beyond the user's goal or wait for repeated "next" instructions.
+
 ## Roles and precedence
 
 - Follow the user's goal and applicable repository instructions. Inspect nested
@@ -21,7 +48,7 @@ manual checklist to operate the loop.
 
 ## 1. Capture the target and discover context
 
-When a user requests goal-driven development, run:
+For a new ordinary development request, run this command yourself:
 
 ```sh
 python3 .loop/loop.py init goal-id --title "Desired result" --implementer codex

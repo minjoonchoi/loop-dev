@@ -12,6 +12,14 @@ This division makes the same workflow available in both environments while keepi
 the user's responsibility to the goal and genuinely human-owned decisions. Calling
 the CLI is an internal agent action, not a sequence of prompts the user must provide.
 
+Installed AGENTS.md and CLAUDE.md make the loop the default for ordinary development
+requests. A desired outcome is sufficient: the user does not need to name the harness,
+invoke a slash command or explain investigation, clarification, review or continuation.
+The entry rules distinguish development from questions, read-only review and explicit
+planning-only requests. Follow-ups reuse persisted goal context instead of starting
+duplicate goals or asking the user to reconstruct it. This routing is an instruction
+to the conversation model, not a keyword parser or provider event hook.
+
 | Responsibility | Implementation |
 | --- | --- |
 | Shared behavioral policy | `rules/workflow.md`, `context.md`, `quality.md` |

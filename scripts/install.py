@@ -17,12 +17,20 @@ END = "<!-- loop-dev:end -->"
 BLOCK = f"""{START}
 ## loop-dev development workflow
 
-For goal-driven development, read `.loop/rules/workflow.md` and follow the full loop.
+Use loop-dev by default for requests to build, implement, change, improve or fix
+project code or behavior. The user's ordinary development goal is the trigger.
+Do not require a special keyword, slash command, workflow instructions, or a request
+to investigate, ask questions, test, review or continue. Do not ask whether to use
+the loop. Read `.loop/rules/workflow.md` and perform its full workflow yourself.
 The current conversation is the implementer. Set `--implementer` to `claude` or `codex`
 according to this environment; the other CLI performs independent reviews.
-The user provides the target and human-owned decisions, not step-by-step technical context.
+The user provides the desired outcome; derive context and ask only unresolved
+human-owned decisions before implementation. Restore an existing goal from its
+persisted state instead of asking the user to repeat context or operating commands.
 Discover context yourself. Use `python3 .loop/loop.py` for persistent gates and handoffs.
 Existing repository instructions still apply; resolve conflicts during preflight.
+Questions, explanations and explicitly read-only or planning-only requests stay
+within that requested scope and do not initialize a development run.
 An explicitly assigned read-only reviewer must review only and never start another loop.
 {END}
 """

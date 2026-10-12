@@ -46,6 +46,21 @@ class InstallationTests(ProjectTest):
             installer.install(self.root)
         self.assertEqual(engine_file.read_text(), "# local customization\n")
 
+    def test_upgrade_replaces_previous_managed_entry_and_preserves_project_rules(self):
+        original_agents = (self.root / "AGENTS.md").read_text()
+        (self.root / "CLAUDE.md").write_text("Project-specific Claude rules\n")
+        legacy_block = installer.START + "\nPrevious release entry policy\n" + installer.END + "\n"
+        with patch.object(installer, "BLOCK", legacy_block):
+            installer.install(self.root)
+        installer.install(self.root)
+        for name, original in (("AGENTS.md", original_agents),
+                               ("CLAUDE.md", "Project-specific Claude rules\n")):
+            content = (self.root / name).read_text()
+            self.assertTrue(content.startswith(original))
+            self.assertNotIn("Previous release entry policy", content)
+            self.assertIn(installer.BLOCK.rstrip(), content)
+            self.assertEqual(content.count(installer.START), 1)
+
     def test_active_goal_blocks_install(self):
         self.running()
         with self.assertRaisesRegex(LoopError, "active goal"):
