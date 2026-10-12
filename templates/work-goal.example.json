@@ -1,0 +1,10 @@
+{
+  "outcome": "Explain how notes are saved and loaded from the inspected implementation",
+  "deliverable": "A concise answer with source references and known limitations",
+  "criteria": [
+    {"id": "C1", "description": "Describe the actual write/read path with source evidence"},
+    {"id": "C2", "description": "Distinguish observed behavior from uncertainty"}
+  ],
+  "decisions": [],
+  "open_questions": []
+}

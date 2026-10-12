@@ -9,40 +9,38 @@ import sys
 SOURCE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SOURCE))
 
-from loop_dev.storage import LoopError, file_hash, inside, locked, read_json, repository, write_json
+from loop_dev.storage import LoopError, file_hash, inside, locked, read_json, write_json
+from loop_dev.knowledge import project_root
 
 
 START = "<!-- loop-dev:start -->"
 END = "<!-- loop-dev:end -->"
 BLOCK = f"""{START}
-## loop-dev development workflow
+## loop-dev goal setting and work
 
-Use loop-dev by default for requests to build, implement, change, improve or fix
-project code or behavior. The user's ordinary development goal is the trigger.
-Do not require a special keyword, slash command, workflow instructions, or a request
-to investigate, ask questions, test, review or continue. Do not ask whether to use
-the loop. Read `.loop/rules/workflow.md` and perform its full workflow yourself.
-The current conversation is the implementer. Set `--implementer` to `claude` or `codex`
-according to this environment; the other CLI performs independent reviews.
-The user provides the desired outcome; derive context and ask only unresolved
-human-owned decisions before implementation. Restore an existing goal from its
-persisted state instead of asking the user to repeat context or operating commands.
-Keep one local analysis session for this conversation, across all its goals. Before
-each follow-up, read its session context and reuse unchanged analysis and answered
-decisions. After investigation or edits, save affected topic summaries with source
-dependencies using `.loop/rules/context.md`; refresh stale topics only. Carry the
-returned session ID into subsequent goals yourself; never ask the user to manage it.
-Discover context yourself. Use `python3 .loop/loop.py` for persistent gates and handoffs.
-Existing repository instructions still apply; resolve conflicts during preflight.
-Questions, explanations and explicitly read-only or planning-only requests stay
-within that requested scope and do not initialize a development run.
-An explicitly assigned read-only reviewer must review only and never start another loop.
+Use the common goal-setting -> work flow for development, documents, explanations,
+research and planning. Read `.loop/rules/work.md` first. The ordinary request is enough;
+do not require a keyword, slash command, extra operating prompt or redundant approval.
+Interpret intent and explicit limits. Reuse local knowledge before investigating or
+asking questions. When the goal is clear, specify it internally and proceed directly.
+Development alone uses `.loop/rules/workflow.md` with tests and opposite-provider
+review/repair cycles. Documents, explanations, research and planning use one-pass
+work with a content/completion check; do not impose a development loop or second CLI.
+The conversation agent maintains the knowledge base and task/session IDs across
+directories. Store evidence, decisions and results with their scope and status;
+drafts/hypotheses must not become confirmed facts. Refresh only relevant stale topics.
+Follow `.loop/rules/writing.md`: conclusion first, concrete evidence, bounded summaries,
+no repeated recaps. Use generated Markdown views for people and JSON for restoration.
+Use `python3 .loop/loop.py` for the internal actions. Existing project instructions
+and user limits apply. A question about progress is not automatically a new build goal.
+An explicitly assigned independent reviewer must review only, write no knowledge or
+task state, and never start orchestration. If the user forbids all recording, honor it.
 {END}
 """
 
 
 def install(target):
-    root = repository(target)
+    root = project_root(target)
     if root == SOURCE:
         raise LoopError("Use scripts/loop.py in the source repository; install into a separate project")
     with locked(root):

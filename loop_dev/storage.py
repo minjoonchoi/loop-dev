@@ -34,13 +34,16 @@ def read_json(path):
 
 
 def write_json(path, value):
+    write_text(path, json.dumps(value, ensure_ascii=False, indent=2) + "\n")
+
+
+def write_text(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, name = tempfile.mkstemp(prefix=".loop-", dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            json.dump(value, stream, ensure_ascii=False, indent=2)
-            stream.write("\n")
+            stream.write(value)
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(name, path)

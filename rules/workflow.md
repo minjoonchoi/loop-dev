@@ -1,5 +1,8 @@
 # Shared development loop
 
+Enter through `work.md` to select the task type. Apply `writing.md` to status,
+analysis and results; keep detailed evidence in linked records.
+
 This is the single workflow for Claude Code and Codex. The conversation that received
 the goal is the implementer and orchestrator. The other CLI reviews. The user must
 not have to feed source locations, missing dependencies, error explanations, or next

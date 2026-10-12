@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from loop_dev.engine import Engine
 from loop_dev.session import Session
+from loop_dev.work import Work
 from loop_dev.storage import LoopError, read_json, snapshot, write_json
 from support import ProjectTest
 
@@ -25,6 +26,50 @@ class SessionTests(ProjectTest):
 
     def remember(self, entry):
         return self.session.remember(entry, self.session.refresh("demo")["revision"])
+
+    def test_development_mirror_cannot_bypass_gates_and_context_checks_freshness(self):
+        work = Work(self.engine.knowledge)
+        task_id = self.engine.refresh()["work_id"]
+        self.assertEqual(work.context(task_id)["task"]["phase"], "goal_setting")
+        with self.assertRaisesRegex(LoopError, "Development work must"):
+            work.finish(task_id, {"summary": "done"})
+        self.running()
+        self.assertEqual(work.context(task_id)["task"]["phase"], "working")
+        self.engine.gate("M1")
+        self.engine.gate()
+        self.assertTrue(work.context(task_id)["task"]["result"]["evidence_current"])
+        (self.root / "value.py").write_text("VALUE = 2\n")
+        context = work.context(task_id)
+        self.assertFalse(context["task"]["result"]["evidence_current"])
+        self.assertIn("historical", Path(context["document"]).read_text())
+
+    def test_one_conversation_can_bind_goals_in_multiple_repositories(self):
+        other = Path(self.temp.name) / "other"
+        other.mkdir()
+        subprocess.run(["git", "init", "-q", str(other)], check=True)
+        initialized = Engine(other, "other-goal", self.engine.knowledge).initialize("Explain the other code", "claude", self.session.id)
+        self.assertEqual(initialized["session_id"], self.session.id)
+        self.assertNotEqual(initialized["work_id"], self.engine.refresh()["work_id"])
+        self.assertEqual(len(self.engine.knowledge.list("session")), 1)
+        self.assertEqual(len(self.engine.knowledge.list("project")), 2)
+
+    def test_repeated_analysis_and_findings_do_not_create_revisions(self):
+        self.remember(self.entry())
+        original = self.session.load()["entries"]["value"]
+        self.remember(self.entry())
+        self.assertEqual(self.session.load()["entries"]["value"], original)
+        self.assertEqual(list((self.session.directory / "history").glob("value-*.json")), [])
+        self.running()
+        for _ in range(2):
+            self.engine.note("discovery", "Consumer requires VALUE = 1", "check.py:2")
+        self.assertEqual(len(self.state()["notes"]), 1)
+
+    def test_imported_analysis_keeps_original_freshness_in_shared_knowledge(self):
+        self.remember(self.entry())
+        (self.root / "value.py").write_text("VALUE = 2\n")
+        context = self.session.refresh()["knowledge"]
+        self.assertEqual(context["reusable"], [])
+        self.assertIn("changed: value.py", context["stale"][0]["stale_reasons"])
 
     def test_next_goal_in_same_session_reuses_analysis_without_rewriting_it(self):
         self.remember(self.entry())

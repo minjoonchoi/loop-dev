@@ -5,17 +5,19 @@
 The user's entry point is a Claude Code or Codex conversation. The active model owns
 discovery, clarification, requirements analysis, implementation, root-cause analysis
 and tactical replanning. Portable scripts own deterministic gates and durable state.
-The opposite CLI provides independent reviews. There is no provider SDK, nested
+The opposite CLI provides independent development reviews. Other work has an
+evidence-backed content/completion check by the active agent, without a mandatory loop.
+There is no provider SDK, nested
 same-provider implementer, background daemon or vendor-specific orchestrator.
 
 This division makes the same workflow available in both environments while keeping
 the user's responsibility to the goal and genuinely human-owned decisions. Calling
 the CLI is an internal agent action, not a sequence of prompts the user must provide.
 
-Installed AGENTS.md and CLAUDE.md make the loop the default for ordinary development
+Installed AGENTS.md and CLAUDE.md make goal setting -> work the default for ordinary
 requests. A desired outcome is sufficient: the user does not need to name the harness,
 invoke a slash command or explain investigation, clarification, review or continuation.
-The entry rules distinguish development from questions, read-only review and explicit
+The entry rules in `work.md` distinguish development from questions, read-only review and explicit
 planning-only requests. Follow-ups reuse persisted goal context instead of starting
 duplicate goals or asking the user to reconstruct it. This routing is an instruction
 to the conversation model, not a keyword parser or provider event hook.
@@ -23,6 +25,9 @@ to the conversation model, not a keyword parser or provider event hook.
 | Responsibility | Implementation |
 | --- | --- |
 | Shared behavioral policy | `rules/workflow.md`, `context.md`, `quality.md` |
+| Common goal setting and work | `work.py`, `rules/work.md`; development delegates to existing gates |
+| Cross-project knowledge | `knowledge.py`; local SQLite, scoped records and dependency checks |
+| Readable records and derived views | `writing.py`, `rules/writing.md`; deterministic Markdown, concise authored fields |
 | Provider entry | Managed blocks in AGENTS.md and CLAUDE.md |
 | Goal completeness | `contract.py` validates structural traceability and decisions |
 | Context reconstruction | `context.py` derives repository inventory, runtime evidence and next action |
@@ -45,7 +50,40 @@ security, verification, operations, delivery and autonomy. The model may resolve
 technical facts through investigation and choices within existing delegated authority.
 It asks the user only about material decisions that cannot be established this way.
 
-## State machine
+## Common work and knowledge
+
+Non-development work moves from `goal_setting` to `working` to `completed`, with
+explicit `blocked` and `aborted` outcomes. A goal records outcome, deliverable,
+criteria and scoped decisions. Unresolved questions block start; the goal is sealed
+on start. Finish requires evidence for each criterion. It invokes no provider or
+test process and does not attest independently that a referenced output is correct.
+The active agent inspects the deliverable and records that assessment. Failed criteria
+remain working; there is no prescribed review/repair cycle or iteration count.
+
+SQLite records projects, checkouts, sessions, tasks and knowledge topics. Origin
+normalization groups Git clones without storing URL credentials; checkout identity
+and observations keep their sources separate. Non-Git directories are supported.
+Same-conversation IDs can cross roots. Scoped decisions retain original authority;
+global/project knowledge can be reused across conversations without adopting a
+different conversation's session binding. Drafts/hypotheses never become facts on finish.
+
+Knowledge updates compare the read observation before and after preparation. SQLite
+transactions and optimistic task version tokens protect concurrent writers; result
+and new knowledge commit together. Identical topic content/dependencies do not create
+another historical revision. Development remains authoritative in its repository
+state: the shared task record mirrors progress, and common finish rejects it.
+Common development context refreshes repository state before reporting freshness.
+
+Markdown views are derived from committed data. Rendering never asks a second
+model to invent a parallel explanation. Topics have a bounded one-line conclusion,
+optional implication/details/uncertainty, scope/status and exact evidence references.
+Full JSON retains all references; context is paged with counts and retrieval commands.
+Documents are replaced only when content changes. A view export failure leaves
+committed data intact; `knowledge get`/`work context` regenerates it. Confirmed labels
+alone do not establish freshness; applicability is computed on context reads.
+These checks constrain shape and duplication, not factual or semantic writing quality.
+
+## Development state machine
 
 | State | Entry condition | Allowed progress |
 | --- | --- | --- |
@@ -145,9 +183,12 @@ dependencies. Ignored application source and external runtime/service changes ar
 that model; explicitly declared ignored rules are hashed, and external facts require fresh
 checks. Rules instruct agents to record the complete read set and directory-level absence.
 
-All memory is repository-local under the existing ignored `.loop/state/` tree, protected
-by the common CLI lock and atomic writes. It does not enter Git snapshots or change frozen
-contracts. Older goal state acquires a new stable session binding on first context read.
+Development session caches remain under ignored `.loop/state/`, protected by the
+repository lock and atomic writes. Entries are imported into shared knowledge with
+their original dependency stamps; import cannot renew stale evidence. Shared knowledge
+defaults to `~/.local/share/loop-dev/` or `LOOP_KB_HOME`, outside source trees. Neither
+store changes frozen contracts. Older goal state acquires a stable session binding on
+first context read. Reconciliation is request-driven, not a background watcher.
 
 ## Review protocol
 

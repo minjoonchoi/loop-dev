@@ -1,5 +1,10 @@
 # Context is work the loop owns
 
+Use `work.md` for routing every kind of request and `writing.md` for record shape.
+Check shared `knowledge context` as well as the development session below. Across
+directories, keep the conversation ID and project boundaries. Paginated views require
+retrieving relevant remaining records before treating a subject as unknown.
+
 Before asking the user anything, classify the missing context:
 
 | Missing item | Loop responsibility |
@@ -83,7 +88,7 @@ becomes stale on HEAD changes. Changed rules/branches conservatively require rec
 all topics; reconcile technical facts yourself before any new human-owned question.
 
 The engine automatically preserves goal decisions, notes and progress in session history,
-and captures preflight findings/passing implementation reviews as broad fallback summaries.
+and links preflight findings/passing implementation reviews from compact fallback records.
 Broad summaries become stale on any source change; maintain focused topics to retain
 unaffected understanding. Historical gaps and gate passes never prove current behavior,
 change a new goal's target, or replace fresh checks and independent reviews. Do not

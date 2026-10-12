@@ -118,7 +118,8 @@ def review_prompt(root, contract, discovery, phase, acceptance_ids, evidence, ba
                "rule_paths": list(rules), "repository_files": files(root), "evidence": evidence,
                "baseline_snapshot": base_snapshot, "changed_paths": changed,
                "execution_notes": notes or [],
-               "session_analysis": (session_context or {}).get("reusable", [])}
+               "session_analysis": (session_context or {}).get("reusable", []),
+               "project_knowledge": (session_context or {}).get("knowledge", {}).get("reusable", [])}
     return (
         "You are the independent reviewer for loop-dev. This is a READ-ONLY review, not an implementation task. "
         "Do not execute repository workflows, edit files, spawn implementers, ask interactive questions, or perform external writes. "

@@ -10,7 +10,13 @@ This repository builds the portable development harness, not a target applicatio
   planning, implementation, debugging and tactical replanning belong to the loop.
 - User-owned uncertainty is resolved before execution. After start, never weaken
   acceptance or rules; preserve finite retries and honest blocked outcomes.
-- Preserve opposite-provider review, real test execution and final fresh evidence.
+- For development, preserve opposite-provider review, real tests and final fresh evidence.
+- All work uses goal setting -> work. Documents, explanations, research and planning
+  have a content/completion check, without a mandatory cycle or opposite-provider CLI.
+- Keep project identity separate from checkout paths and preserve knowledge status,
+  evidence and decision scope. Shared memory is not a new source of authority.
+- Follow rules/writing.md for compact, evidence-backed records and deterministic
+  human views. Do not generate repeated narrative logs or treat drafts as facts.
 - Test state transitions, rejected/stale evidence, provider failures and installation
   preservation using `python3 -m unittest discover -s tests -v`.
 - Update usage/architecture docs and examples when the contract or CLI changes.

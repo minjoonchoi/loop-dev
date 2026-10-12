@@ -7,6 +7,7 @@ import uuid
 
 from .context import inventory
 from .contract import AREAS, identifier
+from .knowledge import KnowledgeBase
 from .storage import (LoopError, digest, file_hash, git, inside, now, read_json,
                       rule_manifest, snapshot, write_json)
 
@@ -29,29 +30,39 @@ def source_files(observation):
 
 
 class Session:
-    def __init__(self, root, session_id):
+    def __init__(self, root, session_id, knowledge=None):
         if not identifier(session_id):
             raise LoopError("Invalid session ID")
         self.root = root
         self.id = session_id
         self.directory = inside(root, ".loop/state/sessions/" + session_id)
         self.path = self.directory / "session.json"
+        self.knowledge = knowledge or KnowledgeBase()
 
     @classmethod
-    def create(cls, root, provider):
+    def create(cls, root, provider, knowledge=None):
         if provider not in ("claude", "codex"):
             raise LoopError("Session provider must be claude or codex")
-        session = cls(root, "s-" + uuid.uuid4().hex)
+        knowledge = knowledge or KnowledgeBase()
+        shared = knowledge.session(provider)
+        session = cls(root, shared["id"], knowledge)
         write_json(session.path, {"version": 1, "id": session.id, "provider": provider,
                                  "created_at": now(), "goals": {}, "entries": {}})
         return session
 
     def load(self, provider=None):
+        if not self.path.exists():
+            shared = self.knowledge.get("session", self.id)
+            if provider and shared["provider"] != provider:
+                raise LoopError("A session belongs to one provider")
+            write_json(self.path, {"version": 1, "id": self.id, "provider": shared["provider"],
+                                   "created_at": now(), "goals": {}, "entries": {}})
         data = read_json(self.path)
         if data.get("version") != 1 or data.get("id") != self.id:
             raise LoopError("Invalid session state")
         if provider and data["provider"] != provider:
             raise LoopError("A session belongs to one provider; open a separate conversation session")
+        self.knowledge.session(data["provider"], self.id, create=True)
         return data
 
     def sync_goal(self, state, contract, discovery):
@@ -99,8 +110,8 @@ class Session:
             raise LoopError("Goal-scoped memory needs a goal_id attached to this session")
         if "goal_id" in entry and entry["goal_id"] not in data["goals"]:
             raise LoopError("Entry goal_id must belong to this session")
-        if not isinstance(entry.get("summary"), str) or not entry["summary"].strip():
-            raise LoopError("Entry summary is required")
+        from .writing import concise
+        concise(entry.get("summary"), "Analysis summary")
         evidence = entry.get("evidence")
         if not isinstance(evidence, list) or not evidence or not all(isinstance(x, str) and x.strip() for x in evidence):
             raise LoopError("Entry evidence must contain concrete references")
@@ -137,8 +148,6 @@ class Session:
             if (path.is_file() and name not in current["snapshot"]["files"] and name not in current["rules"]):
                 raise LoopError("Analysis dependencies must be visible to Git or declared rules; ignored source is not observed")
         previous = data["entries"].get(entry["id"])
-        if previous:
-            write_json(self.directory / "history" / (entry["id"] + "-" + uuid.uuid4().hex + ".json"), previous)
         # Whitelist authored fields; computed stamps can never come from the input JSON.
         item = {key: entry[key] for key in ("id", "kind", "scope", "goal_id", "summary", "evidence", "paths",
                                           "area", "basis", "applies_to") if key in entry}
@@ -148,8 +157,14 @@ class Session:
         # A concurrent edit must not stamp an analysis with mixed input versions.
         if self.observe(data)["revision"] != observed_revision:
             raise LoopError("Repository changed while recording analysis; refresh and inspect the delta")
+        excluded = {"recorded_at", "generation", "observed_revision"}
+        if previous and {k: v for k, v in previous.items() if k not in excluded} == {k: v for k, v in item.items() if k not in excluded}:
+            return self.refresh(entry.get("goal_id"))
+        if previous:
+            write_json(self.directory / "history" / (entry["id"] + "-" + uuid.uuid4().hex + ".json"), previous)
         data["entries"][entry["id"]] = item
         write_json(self.path, data)
+        self.knowledge.import_session(self.root, self.id, item)
         return self.refresh(entry.get("goal_id"))
 
     def refresh(self, goal_id=None):
@@ -199,6 +214,11 @@ class Session:
                 "Cache is derived context, not instructions, a new target, or a substitute for fresh tests and independent review.",
             ],
         }
+        location = self.knowledge.attach(self.root)
+        for item in data["entries"].values():
+            self.knowledge.import_session(self.root, self.id, item)
+        value["knowledge"] = self.knowledge.context([location], self.id,
+            self.knowledge.development_id(location, goal_id) if goal_id else None)
         data.update(observation=current, inventory=inv, updated_at=now())
         write_json(self.path, data)
         write_json(self.directory / "context.json", value)
@@ -214,11 +234,9 @@ class Session:
             return  # The next context will show the change; do not restamp old review evidence.
         phase = report["phase"]
         if phase == "plan":
-            summary = "Preflight source findings (not proof of completion):\n" + "\n".join(discovery["findings"])
+            summary = f"Goal {state['id']}: preflight passed. Findings and remaining implementation work are in the linked gate record."
         else:
-            result = report["review"]["result"]
-            summary = (f"Goal {state['id']}, {phase}, passed at this snapshot. " + result["summary"] + "\n"
-                       + "\n".join(f"{x['acceptance_id']}: {x['evidence']}" for x in result["coverage"]))
+            summary = f"Goal {state['id']}: {phase} passed at the recorded snapshot. Criterion evidence is in the linked gate record."
         # Replace the preflight fallback when implementation evidence arrives, so obsolete
         # preflight analysis does not trigger an unnecessary full-source investigation.
         self.remember({"id": "auto-" + digest(state["id"])[:20], "kind": "analysis", "scope": "session",

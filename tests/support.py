@@ -64,7 +64,8 @@ class ProjectTest(unittest.TestCase):
             path = self.bin / name
             path.write_text(FAKE_CLI)
             path.chmod(0o755)
-        self.env = patch.dict(os.environ, {"PATH": str(self.bin) + os.pathsep + os.environ["PATH"]})
+        self.env = patch.dict(os.environ, {"PATH": str(self.bin) + os.pathsep + os.environ["PATH"],
+                                          "LOOP_KB_HOME": str(Path(self.temp.name) / "knowledge")})
         self.env.start()
         self.addCleanup(self.env.stop)
         self.git("init", "-q")

@@ -10,12 +10,14 @@ from . import context, providers
 from .contract import identifier, template, validate
 from .process import execute
 from .session import Session
+from .knowledge import KnowledgeBase
+from .writing import concise, task_document, task_summary
 from .storage import (LoopError, digest, engine_digest, head, inside, now, read_json,
-                      rule_manifest, snapshot, write_json)
+                      rule_manifest, snapshot, write_json, write_text)
 
 
 class Engine:
-    def __init__(self, root, goal_id):
+    def __init__(self, root, goal_id, knowledge=None):
         if not identifier(goal_id) or goal_id == "sessions":
             raise LoopError("Invalid goal ID; use letters, digits, dashes or underscores")
         self.root = root
@@ -24,16 +26,18 @@ class Engine:
         self.state_dir = inside(root, ".loop/state/" + goal_id)
         self.state_path = self.state_dir / "state.json"
         self.active_path = root / ".loop/state/active.json"
+        self.knowledge = knowledge or KnowledgeBase()
 
     def initialize(self, title, implementer, session_id=None):
+        concise(title, "Goal title", 120)
         if self.goal_dir.exists() or self.state_dir.exists():
             raise LoopError(f"Goal already exists: {self.id}")
-        session = Session(self.root, session_id) if session_id else Session.create(self.root, implementer)
+        session = Session(self.root, session_id, self.knowledge) if session_id else Session.create(self.root, implementer, self.knowledge)
         session.load(implementer)
         self.goal_dir.mkdir(parents=True)
         contract = template(self.id, title, implementer)
-        for name in (".loop/rules/workflow.md", "rules/workflow.md", "rules/context.md",
-                     "rules/quality.md", "AGENTS.md", "CLAUDE.md"):
+        for name in (".loop/rules/workflow.md", "rules/work.md", "rules/writing.md", "rules/workflow.md",
+                     "rules/context.md", "rules/quality.md", "AGENTS.md", "CLAUDE.md"):
             if (self.root / name).is_file():
                 contract["rules"].append(name)
         write_json(self.goal_dir / "contract.json", contract)
@@ -96,9 +100,9 @@ class Engine:
     def session(self, state, contract, discovery):
         if not state.get("session_id"):
             # Upgrade an older goal once, without guessing which conversation owns other caches.
-            state["session_id"] = Session.create(self.root, contract["execution"]["implementer"]).id
+            state["session_id"] = Session.create(self.root, contract["execution"]["implementer"], self.knowledge).id
             self.save(state, "session-attached")
-        session = Session(self.root, state["session_id"])
+        session = Session(self.root, state["session_id"], self.knowledge)
         session.sync_goal(state, contract, discovery)
         return session
 
@@ -120,9 +124,19 @@ class Engine:
             if not value["evidence_current"]:
                 value["next"] = {"action": "report_stale", "instruction": "Files changed after completion; new work needs a new goal."}
         path = self.state_dir / "context.json"
+        work = self.knowledge.record_development(self.root, state, contract, discovery, value.get("evidence_current"),
+                                               value["next"]["instruction"])
+        value["work"] = {"id": work["id"], "kind": "development", "phase": work["phase"]}
+        history = value["session"]["knowledge"]["tasks"]
+        history[:] = [item for item in history if item["id"] != work["id"]]
+        history.insert(0, task_summary(work))
         write_json(path, value)
+        document = self.state_dir / "status.md"
+        rendered = task_document(work).replace(f"[Full record]({work['id']}.json)", "[Full context](context.json)")
+        if not document.exists() or document.read_text(encoding="utf-8") != rendered:
+            write_text(document, rendered)
         return {"goal": self.id, "phase": state["phase"], "session_id": state["session_id"],
-                "context": str(path), "next": value["next"],
+                "work_id": work["id"], "context": str(path), "document": str(document), "next": value["next"],
                 **{key: value[key] for key in ("integrity_ok", "evidence_current", "integrity_error") if key in value}}
 
     def plan_review(self):
@@ -330,6 +344,11 @@ class Engine:
         if state["phase"] != "running":
             raise LoopError("Execution notes require a running goal")
         self.integrity(state, contract, discovery)
+        concise(text, "Execution finding")
+        if not evidence.strip():
+            raise LoopError("Execution findings need evidence")
+        if any(x["kind"] == kind and x["text"] == text and x["evidence"] == evidence for x in state["notes"]):
+            return self.refresh()
         state["notes"].append({"at": now(), "kind": kind, "text": text, "evidence": evidence})
         self.save(state, "context-updated")
         return self.refresh()
