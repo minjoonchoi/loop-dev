@@ -16,13 +16,13 @@ This division makes the same workflow available in both environments while keepi
 the user's responsibility to the goal and genuinely human-owned decisions. Calling
 the CLI is an internal agent action, not a sequence of prompts the user must provide.
 
-Installed AGENTS.md and CLAUDE.md make goal setting -> work the default for ordinary
-requests. A desired outcome is sufficient: the user does not need to name the harness,
-invoke a slash command or explain investigation, clarification, review or continuation.
-The entry rules in `work.md` distinguish development from questions, read-only review and explicit
-planning-only requests. Follow-ups reuse persisted goal context instead of starting
-duplicate goals or asking the user to reconstruct it. This routing is an instruction
-to the conversation model, not a keyword parser or provider event hook.
+The user explicitly starts the loop-dev skill once. Installed AGENTS.md and CLAUDE.md
+then route every input in that conversation through `work.md`, including new goals,
+questions, documents, corrections and stops. A goal finishing, a task kind or directory
+changing, and context compaction do not disable activation. Only an explicit off
+request disables it; a task pause keeps it active. Separate conversations start off.
+The shared skill has Claude and Codex discovery files with implicit invocation off.
+This is host-agent routing plus persisted state, not a keyword parser or message hook.
 
 | Responsibility | Implementation |
 | --- | --- |
@@ -31,7 +31,8 @@ to the conversation model, not a keyword parser or provider event hook.
 | Common goal setting and work | `work.py`, `rules/work.md`; development delegates to existing gates |
 | Cross-project knowledge | `knowledge.py`; local SQLite, scoped records and dependency checks |
 | Readable records and derived views | `writing.py`, `rules/writing.md`; deterministic Markdown, concise authored fields |
-| Provider entry | Managed blocks in AGENTS.md and CLAUDE.md |
+| Provider entry | `skills/loop-dev/`, installed discovery files, managed AGENTS.md/CLAUDE.md blocks |
+| Conversation activation | `harness.py`; explicit on/status/off, shared SQLite session record |
 | Goal completeness | `contract.py` validates structural traceability and decisions |
 | Context reconstruction | `context.py` derives repository inventory, runtime evidence and next action |
 | Reusable conversation analysis | `session.py` stores topics, decisions, dependency fingerprints and goal history |
@@ -39,6 +40,33 @@ to the conversation model, not a keyword parser or provider event hook.
 | Independent review | `providers.py` invokes the opposite provider and validates structured output |
 | Bounded subprocesses | `process.py`, argv arrays, stdin EOF, process-group timeout |
 | Freshness/concurrency | `storage.py`, hashes, atomic JSON, POSIX flock |
+
+## Session activation
+
+`harness on --provider PROVIDER [--session ID]` explicitly enables the bound session.
+Without an ID it creates a fresh conversation; an unknown supplied ID or different
+provider is rejected. `harness status ID` reads that specific session. `harness off ID`
+disables routing without changing goals, knowledge, files or execution budgets.
+The session's `harness` field records `enabled`, `activated_at` and `updated_at`.
+Legacy sessions without this field are inactive. Identical toggles do not create
+repeated history. Changes serialize through a SQLite transaction.
+
+Every new goal/task receives that ID, even the first. Status, shared knowledge context
+and development session context expose current activation from the shared store.
+Task completion never toggles it. The host preserves `{session_id, knowledge_home,
+entrypoint}` in conversation/compaction handoffs. The absolute CLI path works after
+moving to an uninstalled directory, using `--root`/`--path` to select the target.
+No provider-wide "latest session" file is used. Knowledge may be shared across chats;
+activation is never inherited through that knowledge.
+
+Low-level engine and work commands remain usable independently; `harness on` is an
+explicit agent action, not cryptographic evidence that a vendor skill was invoked.
+The cooperative host must honor routing and off requests. The scripts cannot intercept
+all messages, recover an erased binding without ownership evidence, or override host
+permissions. An off input stops further automatic dispatch when the host handles it;
+it does not retroactively cancel a synchronous subprocess. Rule fingerprints include
+the installed harness skill and metadata, including ignored files, so edits invalidate
+frozen development evidence and dependent knowledge. Workers cannot edit `.agents/`.
 
 ## Assignment boundary
 
@@ -187,11 +215,12 @@ decision becomes a blocker and a separate preflight goal rather than a mid-run q
 ## Analysis reused within a conversation
 
 A local session spans multiple goals in the same Claude Code or Codex conversation.
-`init` creates a session when none is supplied; subsequent goals pass `--session`.
-An optional `session open` supports analysis before the first goal. The agent carries
-the returned ID in conversation handoffs and goal state. New conversations use new
-IDs; the engine never selects the latest cache as a proxy for session ownership.
-Explicitly resuming a goal restores its binding. Providers must match the binding.
+Explicit skill activation creates or enables its session; every goal passes
+`--session`. Low-level `init` or `session open` without an ID creates an inactive
+session. The agent carries the ID, absolute entrypoint and knowledge home in handoffs.
+New conversations use new IDs; the engine never selects the latest cache as a proxy
+for session ownership. Identified tasks recover bindings only for their own resumed
+conversation. Providers must match the binding.
 There is no undocumented host-session lookup, global pointer or vendor-specific hook.
 
 `session.json` contains indexed topic summaries and original evidence, scope/basis

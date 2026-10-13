@@ -30,10 +30,15 @@ required deliverables using `delegation.md`, then inspect their concrete evidenc
 ## Session analysis is maintained by the agent
 
 One local session spans repeated requests/goals in one Claude Code or Codex
-conversation. The first `init` returns `session_id`; pass it on subsequent goals.
+conversation. Explicit skill activation returns `session_id`; pass it on every goal
+and task, including the first. Keep the absolute entrypoint and knowledge home beside
+it in conversation/compaction handoffs. `harness status SESSION_ID` restores whether
+ALL inputs still use the harness, independently of the last task's phase or directory.
 Do not open a new session on every prompt or select another session by recency.
-Explicitly resumed goals recover their stored session. Separate conversations get
-separate IDs, even with the same provider. This uses no vendor-specific session API.
+An identified task/goal can recover a lost binding for its own resumed conversation.
+Separate conversations start inactive with separate IDs, even with the same provider.
+Project knowledge and a goal's presence do not activate a new conversation. No
+vendor-specific session lookup or global active-session pointer is used.
 
 Before source investigation or questions, run `context GOAL` (which includes the
 session), or `session context SESSION_ID --goal GOAL`. For a follow-up without a

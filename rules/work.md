@@ -5,6 +5,46 @@ retrieval, internal commands, recording and updates. The user supplies the reque
 outcome and only human-owned decisions that cannot be established from existing context.
 Apply `writing.md` to status, knowledge and deliverables throughout both stages.
 
+## Session activation comes first
+
+The user explicitly invokes the loop-dev skill once (`/loop-dev` in Claude Code,
+`$loop-dev` in Codex). It runs `harness on` and binds the conversation's session ID,
+absolute entrypoint and knowledge home. Without that activation, ordinary wording
+must not start the harness. Existing low-level CLI operations remain available.
+
+Before EVERY later input, read `harness status SESSION_ID` with the retained binding.
+If enabled, use this entry for all input, including new unrelated goals and questions.
+Completing a goal, changing directories or task types, and compaction do not turn it
+off. Keep the same ID and knowledge home; use the retained absolute entrypoint with
+`--root PATH`/`--path PATH` after moving. Preserve this binding in compaction handoffs.
+A separate conversation starts inactive; never infer its binding from recent records.
+
+Only an explicit request to turn the harness off runs `harness off SESSION_ID` and
+ends automatic routing/execution. It preserves tasks, knowledge, files and budgets.
+A task pause/stop keeps activation; record its boundary and wait for further intent.
+Reinvoking the skill in the same conversation runs `harness on --session SESSION_ID`.
+Do not reactivate merely because a later ordinary request sounds like development.
+Workers/reviewers do not activate, toggle or recursively enter the harness.
+
+Commands below use `.loop/loop.py` as shorthand while at the installed root. After
+moving, use `python3 ENTRYPOINT --knowledge-home KNOWLEDGE_HOME --root NEW_ROOT ...`
+with the retained absolute entrypoint; do not look for `.loop` in the new directory.
+
+For a user-requested task pause, stop dispatching work. Save a task-scoped user
+decision with the request as evidence and the boundary "Do not resume this task
+until the user requests it." Use `work block TASK --reason "User paused this task"`
+for unfinished common work, or `block GOAL --reason "User paused this task"` for a
+running development goal. Draft/ready development goals keep their phase and the
+saved pause boundary; do not start them. Status questions and skill reactivation
+never resume a paused task. Only the user's later request to continue permits
+`work resume`/`resume` (or continued preflight for draft/ready goals), within budgets.
+If a worker/gate is already in flight, use host cancellation when available;
+otherwise the synchronous call may finish before the stop can be handled. Inspect
+its logs and any applied paths, preserve actual changes and consumed attempts,
+then record the pause. Do not dispatch further calls, manually apply pending edits,
+silently roll back files, or report unobserved cancellation. Explicit abandonment
+uses `work abort`/`abort`; a pause is resumable and does not release a running dev goal.
+
 ## Interpret the request before selecting an executor
 
 | Intent | Kind and action |
@@ -17,7 +57,9 @@ Apply `writing.md` to status, knowledge and deliverables throughout both stages.
 | Ask for a plan only | planning; produce the plan without implementing it |
 | Continue the current task | restore its task/goal and session; do not duplicate it |
 | Ask why work stopped | explain the actual status; continue only already-authorized unfinished work |
-| Pause/stop | record the state and honor the boundary |
+| Pause/stop the task | record the state and honor the boundary; keep harness activation |
+| Turn the harness off | disable this session; preserve unfinished work without continuing it |
+| Acknowledgment or correction | update the current context as needed; do not invent a new task |
 
 Explicit user limits take precedence over inferred intent. Do not treat the presence
 of a code path or the word "fix" in an explanatory question as a development request.
@@ -47,7 +89,7 @@ Read saved state, select current knowledge and inspect outputs before the next h
 4. If the request and existing knowledge are sufficient, define the goal internally
    and start immediately. Goal setting is not a mandatory questionnaire or approval.
 
-For development, run `init ... --implementer WORKER --orchestrator CONVERSATION [--session SESSION]` and
+For development, run `init ... --implementer WORKER --orchestrator CONVERSATION --session SESSION` and
 follow `workflow.md`. `work open --kind development` also creates a development goal.
 It is mirrored into the common task history; only development gates can complete it.
 For work spanning several code repositories, use a development goal per working tree
@@ -63,8 +105,8 @@ python3 .loop/loop.py work goal WORK_ID --input /temporary/goal.json
 python3 .loop/loop.py work start WORK_ID
 ```
 
-Omit `--session` only for the first task of a new conversation. Keep the returned ID
-across directories and tasks. Use `claude` inside Claude Code. The JSON structure is
+Pass the ID returned by skill activation on EVERY task, including the first one.
+Keep it across directories and tasks. Use `claude` inside Claude Code. The JSON structure is
 in `work-goal.example.json`; the agent creates it in the knowledge directory or an
 ignored temporary location. Do not ask users for IDs, JSON, or procedural prompts.
 No Git repository or opposite-provider CLI is needed for these non-development tasks.

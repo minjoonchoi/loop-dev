@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 import uuid
 
 from .contract import identifier
-from .storage import LoopError, digest, file_hash, files, git, inside, now
+from .storage import HARNESS_SKILL_FILES, LoopError, digest, file_hash, files, git, inside, now
 
 
 def project_root(path):
@@ -199,7 +199,7 @@ class KnowledgeBase:
             hashes = {name: value for name, value in hashes.items() if value != "deleted"}
             rules = {name: value for name, value in hashes.items()
                      if Path(name).name in ("AGENTS.md", "CLAUDE.md", "AGENTS.override.md") or name.startswith(".loop/rules/")}
-            for name in (".claude/settings.json", ".claude/settings.local.json", ".codex/config.toml"):
+            for name in (".claude/settings.json", ".claude/settings.local.json", ".codex/config.toml", *HARNESS_SKILL_FILES):
                 if (root / name).is_file():
                     rules[name] = file_hash(inside(root, name))
             result[location["id"]] = {"project_id": location["project_id"], "root": str(root), "files": hashes,
@@ -301,12 +301,14 @@ class KnowledgeBase:
         return self.put("topic", item, db)
 
     def context(self, locations, session_id=None, task_id=None, query=None, limit=20, offset=0):
+        from .harness import Harness
         from .writing import task_summary
         if not 1 <= limit <= 100 or offset < 0:
             raise LoopError("Knowledge context limit must be 1..100 and offset must be nonnegative")
         observations = self.observe(locations)
         result = {"home": str(self.home), "revision": digest(observations), "locations": locations,
                   "reusable": [], "stale": [], "unconfirmed": [], "other_contexts": [], "tasks": []}
+        result["harness"] = Harness(self).status(session_id) if session_id else None
         for item in self.list("topic"):
             if query and query.casefold() not in (item["id"] + " " + item["summary"]).casefold():
                 continue

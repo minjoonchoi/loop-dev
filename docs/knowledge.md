@@ -15,17 +15,27 @@
 같은 세션 ID를 여러 디렉터리에서 사용합니다. 다른 대화의 ID를 최근 기록이라는 이유로 선택하지
 않습니다. 새 대화도 프로젝트 지식은 읽을 수 있지만 세션·작업에 한정된 답변은 분리합니다.
 
+## 세션 활성화
+
+스킬을 명시적으로 시작하면 로컬 세션에 활성화 상태를 저장합니다. 이후 모든 입력을 같은
+목표 설정 → 작업 흐름으로 처리하며 작업 완료·새 목표·경로 이동·맥락 압축으로 꺼지지 않습니다.
+매 입력 전에 에이전트가 `harness status SESSION_ID`를 확인합니다. `knowledge context`에도
+현재 `harness` 상태가 포함됩니다. 세션 ID, 지식 저장소, 실행 파일 절대 경로를 함께 유지합니다.
+최초 활성화는 `harness on --provider codex`, 같은 대화의 재활성화는 `--session SESSION_ID`를
+추가하며, 명시적 해제는 `harness off SESSION_ID`입니다. 이 명령들은 Git 없이도 동작합니다.
+해제는 작업·지식·예산을 지우지 않습니다. 다른 대화는 별도 비활성 세션으로 시작합니다.
+
 ## 비개발 작업
 
 ```sh
-python3 .loop/loop.py work open --kind explanation --title "저장 방식 설명" --provider codex --path /project
+python3 .loop/loop.py work open --kind explanation --title "저장 방식 설명" --provider codex --path /project --session SESSION_ID
 python3 .loop/loop.py work goal WORK_ID --input /temporary/goal.json
 python3 .loop/loop.py work start WORK_ID
 python3 .loop/loop.py work delegate WORK_ID --input /temporary/assignment.json --path /project
 python3 .loop/loop.py work finish WORK_ID --input /temporary/result.json
 ```
 
-후속 작업에는 `--session SESSION_ID`를 추가합니다. 여러 디렉터리는 `--path`를 반복합니다.
+스킬 활성화에서 받은 `--session SESSION_ID`를 첫 작업부터 사용합니다. 여러 디렉터리는 `--path`를 반복합니다.
 `--provider`는 대화, 선택적인 `--worker`는 작업 CLI이며 생략하면 같은 공급자를 씁니다.
 위임은 [위임 규칙](../rules/delegation.md)의 필드를 모두 채웁니다. 여러 경로에 연결된 작업은
 위임할 때 한 경로를 명시해야 합니다. 도구 결과를 확인한 후 전체 완료 조건을 기록합니다.

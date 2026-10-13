@@ -168,6 +168,7 @@ class Session:
         return self.refresh(entry.get("goal_id"))
 
     def refresh(self, goal_id=None):
+        from .harness import Harness
         data = self.load()
         if goal_id is not None and goal_id not in data["goals"]:
             raise LoopError("Goal is not attached to this session")
@@ -199,6 +200,7 @@ class Session:
                         current=current["snapshot"], rules=current["rules"])
         value = {
             "id": self.id, "provider": data["provider"], "goal_id": goal_id,
+            "harness": Harness(self.knowledge).status(self.id),
             "revision": current["revision"], "branch": current["branch"],
             "delta": changes(source_files(previous) if previous else {}, source_files(current)),
             "head_changed": bool(previous and previous["snapshot"]["head"] != current["snapshot"]["head"]),

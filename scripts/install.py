@@ -18,10 +18,22 @@ END = "<!-- loop-dev:end -->"
 BLOCK = f"""{START}
 ## loop-dev goal setting and work
 
-Use the common goal-setting -> work flow for development, documents, explanations,
-research and planning. Explicitly assigned workers/reviewers execute their assignment
-only; do not start this entry workflow. Otherwise read `.loop/rules/work.md` first. The ordinary request is enough;
-do not require a keyword, slash command, extra operating prompt or redundant approval.
+Explicitly assigned workers/reviewers execute their assignment only; never activate
+the harness, change session state or start this entry workflow.
+The loop-dev skill is an explicit, once-per-conversation activation: `/loop-dev` in
+Claude Code, `$loop-dev` in Codex. Before activation, ordinary requests do not start
+the harness. Do not infer activation from task keywords or another session's records.
+Once activated, route EVERY subsequent input through `.loop/rules/work.md`, including
+new goals, questions, documents, explanations, corrections, progress and stop requests.
+Goal completion, task kind changes, directory changes and context compaction do not
+disable it. Never require another skill prefix for a later goal in this conversation.
+Keep the bound session ID, absolute CLI entrypoint and knowledge-home in conversation
+handoffs. Before each input, read `harness status SESSION_ID` with that binding; use
+the original absolute entrypoint after moving directories. Never select a session by
+recency or adopt another conversation's activation. A separate conversation starts off.
+Only an explicit request to turn the harness off disables routing (`harness off`).
+A task pause/stop preserves activation; do not confuse it with turning the harness off.
+When enabled, use the common goal-setting -> work flow for all task types.
 Interpret intent and explicit limits. Reuse local knowledge before investigating or
 asking questions. When the goal is clear, specify it internally and proceed directly.
 Development alone uses `.loop/rules/workflow.md` with tests and opposite-provider
@@ -38,12 +50,45 @@ directories. Store evidence, decisions and results with their scope and status;
 drafts/hypotheses must not become confirmed facts. Refresh only relevant stale topics.
 Follow `.loop/rules/writing.md`: conclusion first, concrete evidence, bounded summaries,
 no repeated recaps. Use generated Markdown views for people and JSON for restoration.
-Use `python3 .loop/loop.py` for the internal actions. Existing project instructions
+At the installed root, use `python3 .loop/loop.py` for internal actions. After moving,
+use the retained absolute entrypoint with `--knowledge-home HOME --root TARGET`.
+Existing project instructions
 and user limits apply. A question about progress is not automatically a new build goal.
 An explicitly assigned independent reviewer must review only, write no knowledge or
 task state, and never start orchestration. If the user forbids all recording, honor it.
 {END}
 """
+
+
+def managed_files():
+    result = {".loop/loop.py": (SOURCE / "scripts/loop.py").read_bytes()}
+    for folder in ("loop_dev", "rules", "templates"):
+        for source in sorted((SOURCE / folder).glob("*")):
+            if source.is_file() and source.suffix in (".py", ".md", ".json"):
+                result[f".loop/{folder}/{source.name}"] = source.read_bytes()
+    skill = (SOURCE / "skills/loop-dev/SKILL.md").read_text(encoding="utf-8")
+    if not skill.startswith("---\n"):
+        raise LoopError("The loop-dev skill needs YAML frontmatter")
+    result[".agents/skills/loop-dev/SKILL.md"] = skill.encode()
+    result[".agents/skills/loop-dev/agents/openai.yaml"] = (SOURCE / "skills/loop-dev/agents/openai.yaml").read_bytes()
+    # Keep one shared body; only Claude's explicit-invocation metadata differs.
+    result[".claude/skills/loop-dev/SKILL.md"] = skill.replace(
+        "---\n", "---\ndisable-model-invocation: true\n", 1).encode()
+    return result
+
+
+def destination(root, name):
+    path = inside(root, name)
+    for ancestor in (path, *path.parents):
+        if ancestor == root:
+            break
+        if ancestor.is_symlink():
+            raise LoopError(f"Refusing a symlinked managed path: {name}")
+        if ancestor != path and ancestor.exists() and not ancestor.is_dir():
+            raise LoopError(f"Managed parent is not a directory: {name}")
+    if path.exists() and not path.is_file():
+        raise LoopError(f"Managed destination is not a file: {name}")
+    return path
 
 
 def install(target):
@@ -56,26 +101,20 @@ def install(target):
         for state in (root / ".loop/state").glob("*/state.json"):
             if read_json(state).get("phase") == "ready":
                 raise LoopError("Cannot replace the harness while a goal is frozen")
-        manifest_path = inside(root, ".loop/install.json")
+        manifest_path = destination(root, ".loop/install.json")
         old = read_json(manifest_path) if manifest_path.exists() else {"files": {}}
-        managed = {".loop/loop.py": SOURCE / "scripts/loop.py"}
-        for folder in ("loop_dev", "rules", "templates"):
-            for source in sorted((SOURCE / folder).glob("*")):
-                if source.is_file() and source.suffix in (".py", ".md", ".json"):
-                    managed[f".loop/{folder}/{source.name}"] = source
+        managed = managed_files()
         writes = {}
-        for name, source in managed.items():
-            destination = inside(root, name)
-            if destination.exists():
-                if destination.is_symlink():
-                    raise LoopError(f"Refusing a symlinked managed file: {name}")
+        for name, content in managed.items():
+            path = destination(root, name)
+            if path.exists():
                 previous = old["files"].get(name)
-                if (previous is None and destination.read_bytes() != source.read_bytes()
-                        or previous is not None and file_hash(destination) != previous):
+                if (previous is None and path.read_bytes() != content
+                        or previous is not None and file_hash(path) != previous):
                     raise LoopError(f"Local changes in managed file; preserve/reconcile them before install: {name}")
-            writes[destination] = source.read_bytes()
+            writes[path] = content
         for name in ("AGENTS.md", "CLAUDE.md"):
-            path = inside(root, name)
+            path = destination(root, name)
             content = path.read_text(encoding="utf-8") if path.exists() else ""
             if START in content or END in content:
                 if content.count(START) != 1 or content.count(END) != 1 or content.index(START) > content.index(END):
@@ -89,7 +128,7 @@ def install(target):
             else:
                 content = content.rstrip() + ("\n\n" if content.strip() else "") + BLOCK
             writes[path] = content.encode()
-        ignore = inside(root, ".gitignore")
+        ignore = destination(root, ".gitignore")
         content = ignore.read_text(encoding="utf-8") if ignore.exists() else ""
         for line in ("/.loop/state/", "/.loop/loop_dev/__pycache__/"):
             if line not in content.splitlines():
@@ -110,7 +149,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         root = install(args.target)
-        print(f"Installed loop-dev into {root}. Open Claude Code or Codex there and describe your goal.")
+        print(f"Installed loop-dev into {root}. Start with /loop-dev in Claude Code or $loop-dev in Codex; the whole conversation then uses the harness.")
         return 0
     except (LoopError, OSError, ValueError) as exc:
         print(f"Install failed: {exc}", file=sys.stderr)

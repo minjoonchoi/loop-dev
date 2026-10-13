@@ -10,6 +10,7 @@ import uuid
 from . import providers
 from .contract import validate
 from .engine import Engine
+from .harness import Harness
 from .session import Session
 from .knowledge import KnowledgeBase, project_root
 from .work import KINDS, Work
@@ -21,6 +22,13 @@ def parser():
     result.add_argument("--root", type=Path, default=Path.cwd(), help="Target repository root")
     result.add_argument("--knowledge-home", type=Path, help="Local knowledge directory (default: LOOP_KB_HOME or ~/.local/share/loop-dev)")
     commands = result.add_subparsers(dest="command", required=True)
+    harness = commands.add_parser("harness", help="Enable or disable the harness for a known conversation")
+    harness_commands = harness.add_subparsers(dest="harness_command", required=True)
+    enabled = harness_commands.add_parser("on")
+    enabled.add_argument("--provider", choices=("claude", "codex"), required=True)
+    enabled.add_argument("--session", help="Current conversation's bound ID; omit only for a new conversation")
+    for name in ("status", "off"):
+        harness_commands.add_parser(name).add_argument("session_id")
     init = commands.add_parser("init", help="Create a draft goal, without implementing code")
     init.add_argument("goal")
     init.add_argument("--title", required=True)
@@ -156,6 +164,14 @@ def main(argv=None):
     args = parser().parse_args(argv)
     try:
         knowledge = KnowledgeBase(args.knowledge_home)
+        if args.command == "harness":
+            harness = Harness(knowledge)
+            output = (harness.on(args.provider, args.session) if args.harness_command == "on"
+                      else getattr(harness, args.harness_command)(args.session_id))
+            base = Path(__file__).resolve().parent.parent
+            output["entrypoint"] = str(base / ("loop.py" if (base / "loop.py").is_file() else "scripts/loop.py"))
+            print(json.dumps(output, ensure_ascii=False, indent=2))
+            return 0
         if args.command in ("work", "knowledge"):
             output = common_command(args, knowledge)
             print(json.dumps(output, ensure_ascii=False, indent=2))

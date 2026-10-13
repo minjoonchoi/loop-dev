@@ -13,6 +13,13 @@ import tempfile
 from datetime import datetime, timezone
 
 
+HARNESS_SKILL_FILES = (
+    ".agents/skills/loop-dev/SKILL.md",
+    ".agents/skills/loop-dev/agents/openai.yaml",
+    ".claude/skills/loop-dev/SKILL.md",
+)
+
+
 class LoopError(Exception):
     """An actionable, non-interactive failure."""
 
@@ -112,7 +119,7 @@ def rule_manifest(root, declared, missing_ok=False):
     names.update(name for name in files(root)
                  if Path(name).name in ("AGENTS.md", "AGENTS.override.md", "CLAUDE.md")
                  or name.startswith(".loop/rules/"))
-    for name in (".claude/settings.json", ".claude/settings.local.json", ".codex/config.toml"):
+    for name in (".claude/settings.json", ".claude/settings.local.json", ".codex/config.toml", *HARNESS_SKILL_FILES):
         if (root / name).exists():
             names.add(name)
     result = {}

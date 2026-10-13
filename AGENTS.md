@@ -13,7 +13,9 @@ This repository builds the portable development harness, not a target applicatio
 - User-owned uncertainty is resolved before execution. After start, never weaken
   acceptance or rules; preserve finite retries and honest blocked outcomes.
 - For development, preserve opposite-provider review, real tests and final fresh evidence.
-- All work uses goal setting -> work. Documents, explanations, research and planning
+- Explicit skill activation enables the whole conversation until explicitly disabled.
+  Preserve that binding across goals, task types, directories and compaction.
+  In an activated conversation, all work uses goal setting -> work. Documents, explanations, research and planning
   have a content/completion check, without a mandatory cycle or opposite-provider CLI.
 - Keep project identity separate from checkout paths and preserve knowledge status,
   evidence and decision scope. Shared memory is not a new source of authority.

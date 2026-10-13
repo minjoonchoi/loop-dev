@@ -118,7 +118,7 @@ class DelegationTests(ProjectTest):
     def test_prestart_and_paths_cannot_expand_authority(self):
         with self.assertRaisesRegex(LoopError, "before start"):
             self.engine.delegate(assignment(kind="implementation", writes=["value.py"]))
-        for name in ("../outside", "/tmp/outside", "src/../value.py", "src/*", "AGENTS.md", "src/CLAUDE.md", ".loop/state/hack", ".claude/settings.json"):
+        for name in ("../outside", "/tmp/outside", "src/../value.py", "src/*", "AGENTS.md", "src/CLAUDE.md", ".loop/state/hack", ".claude/settings.json", ".agents/skills/loop-dev/SKILL.md", ".agents/skills/loop-dev/agents/openai.yaml"):
             with self.subTest(name=name), self.assertRaises(LoopError):
                 validate_request(assignment(kind="implementation", writes=[name]), self.root, "running", True, ["AGENTS.md"])
         (self.root / "alias").symlink_to(self.root, target_is_directory=True)

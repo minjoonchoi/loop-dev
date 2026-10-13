@@ -10,14 +10,13 @@ not have to feed source locations, missing dependencies, error explanations, or 
 steps one prompt at a time. Run the commands below yourself; do not hand the user a
 manual checklist to operate the loop.
 
-## Automatic entry: the goal is enough
+## Development inside an activated conversation
 
-Use this workflow by default when the user requests a project feature, change,
-improvement or fix. An ordinary request such as "로그인 기능을 완성해 줘" is enough.
-Do not require the user to mention loop-dev, use a slash command, describe the
-development procedure, say "investigate it yourself", or request tests/reviews.
-Do not ask whether to use the loop. Those actions are standing responsibilities
-of the harness, not additional user requirements or activation phrases.
+The loop-dev skill explicitly enables the conversation once; `work.md` routes every
+later input. Within that enabled session, an ordinary request such as "로그인 기능을
+완성해 줘" starts this workflow. Do not require another skill prefix, operating
+prompt, request for tests/reviews or redundant permission to use the loop. Outside
+an activated session, task wording alone does not activate it.
 
 | User intent | Agent action |
 | --- | --- |
@@ -65,18 +64,18 @@ product scope beyond the user's goal or wait for repeated "next" instructions.
 For a new ordinary development request, run this command yourself:
 
 ```sh
-python3 .loop/loop.py init goal-id --title "Desired result" --implementer codex --orchestrator codex
+python3 .loop/loop.py init goal-id --title "Desired result" --implementer codex --orchestrator codex --session SESSION_ID
 ```
 
 Set `--orchestrator claude` inside Claude Code. The worker defaults to the same
 provider in ordinary use; an authorized alternative may be set before freeze. Test
 a read-only analysis assignment before start to verify the worker CLI. Read context.
 For a continuing goal, run `context goal-id` instead of initializing again.
-The first `init` creates a local session and returns its ID. For a **new goal in this
-same conversation**, pass `--session SESSION_ID` to `init`; do not create a new session
-for each request. If analysis starts before any goal, `session open --provider codex`
-creates the conversation's session. Keep its ID in conversation handoffs. The agent
-performs these actions; the user only supplies goals and unresolved human decisions.
+Pass the session ID from skill activation even on the first goal. `init` and
+`session open` can create inactive sessions for low-level use; they do not replace
+explicit skill activation. Keep the ID, absolute CLI entrypoint and knowledge home
+in handoffs. The agent performs these actions; the user supplies goals and unresolved
+human decisions. A completed goal does not turn off the session.
 
 1. Define observable target behavior, users, scope, exclusions, requirements and
    acceptance scenarios before judging the current implementation.
@@ -202,6 +201,9 @@ the exact recovery condition. New requirements start a new preflight goal.
   interruption if necessary, then `resume`. Consumed attempts stay consumed.
 - `block --reason` records an unavoidable obstacle. `abort --reason` preserves all
   files and evidence and releases the working tree for another goal. Neither is success.
+- A user-requested pause follows `work.md`'s pause recipe. Preserve the recorded
+  boundary; a progress question, retry recommendation or skill reactivation is not
+  authorization to resume paused work.
 - Give brief progress updates during execution. Finish with achieved behavior,
   verification evidence, delivery location and concrete remaining limitations.
 

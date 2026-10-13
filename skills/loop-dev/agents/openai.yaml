@@ -1,0 +1,6 @@
+interface:
+  display_name: "Loop Dev"
+  short_description: "Enable the goal and work harness for this conversation"
+  default_prompt: "Use $loop-dev to enable the harness for every input in this conversation."
+policy:
+  allow_implicit_invocation: false

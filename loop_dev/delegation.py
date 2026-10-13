@@ -85,7 +85,7 @@ def validate_request(request, root, phase, development, rules):
         source_path(root, name, directory=True)
     for name in request["write_paths"]:
         source_path(root, name)
-        if (name in rules or set(Path(name).parts) & {".loop", ".claude", ".codex"}
+        if (name in rules or set(Path(name).parts) & {".loop", ".agents", ".claude", ".codex"}
                 or Path(name).name in ("AGENTS.md", "AGENTS.override.md", "CLAUDE.md")):
             raise LoopError("Workers cannot change instructions, harness state or provider configuration")
 

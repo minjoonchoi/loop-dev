@@ -153,6 +153,10 @@ def context_document(context):
     lines = ["# Local knowledge", "",
              f"{counts['reusable']} current · {counts['stale']} need rechecking · {counts['unconfirmed']} unconfirmed", "",
              "Use current evidence within its recorded scope. Past results do not verify today's files."]
+    activation = context.get("harness")
+    if activation:
+        state = "on · all inputs in this conversation" if activation["enabled"] else "off"
+        lines.extend(["", f"**Harness:** {state} · session `{plain(activation['session_id'])}`"])
     for key, label in (("reusable", "Current"), ("stale", "Recheck before reuse"),
                        ("unconfirmed", "Drafts and hypotheses"), ("tasks", "Work history")):
         values = context[key]
