@@ -9,8 +9,8 @@
 ## 시작
 
 공통 환경은 macOS/Linux, Python 3.10+, Git입니다. Windows는 WSL을 사용합니다.
-개발 검토에는 로그인된 Claude Code·Codex CLI와 대상 Git 저장소가 필요합니다.
-문서·설명 등은 일반 디렉터리에서도 실행하며, 상대 CLI를 요구하지 않습니다.
+실제 작업은 로그인된 Claude Code 또는 Codex CLI에 위임합니다. 개발은 독립 검토를 위해
+두 CLI와 대상 Git 저장소가 필요합니다. 문서·설명은 일반 디렉터리에서 작업 CLI 하나로 수행합니다.
 
 ```sh
 git clone https://github.com/minjoonchoi/loop-dev.git
@@ -33,10 +33,10 @@ python3 loop-dev/scripts/install.py --target /absolute/path/to/project
 
 ## 두 단계의 역할
 
-| 단계 | 에이전트가 하는 일 | 사용자가 하는 일 |
+| 단계 | 대화가 관리하는 일 | 사용자가 하는 일 |
 | --- | --- | --- |
-| 목표 설정 | 지식·이전 답변 확인, 필요한 조사, 결과·범위·완료 조건 구체화 | 목표 전달; 해결되지 않은 사용자 결정에만 답변 |
-| 작업 | 요청 수행, 결과 확인, 관련 지식 갱신, 결과 보고 | 결과 확인 |
+| 목표 설정 | 지식·이전 답변 확인, 조사 위임, 결과·범위·완료 조건 구체화 | 목표 전달; 해결되지 않은 사용자 결정에만 답변 |
+| 작업 | 범위를 정해 도구에 위임, 결과 확인, 관련 지식 갱신, 결과 보고 | 결과 확인 |
 
 명확한 요청은 내부적으로 목표를 정한 뒤 바로 진행합니다. 목표 설정이 매번 질문이나 승인을
 받는 단계는 아닙니다. 현재 구현 수준은 원하는 목표 수준을 낮추는 근거가 아닙니다.
@@ -52,6 +52,34 @@ python3 loop-dev/scripts/install.py --target /absolute/path/to/project
 
 비개발 작업에 정해진 반복 횟수나 교차 검토를 강제하지 않습니다. 실제 오류나 누락은 수정합니다.
 여러 저장소의 개발은 같은 세션에 연결한 저장소별 목표로 수행하고, 필요한 통합 검증까지 완료해야 합니다.
+
+## 대화와 작업 도구의 경계
+
+```mermaid
+flowchart TD
+    O["대화: 목표 설정·작업 지시"] --> H["하네스: 지시·필요 맥락 전달"]
+    H --> W["작업 도구: 지정된 조사·구현·작성"]
+    W --> V{"범위·근거 검사"}
+    V -- "부족·범위 위반" --> O
+    V -- "유효한 결과" --> G["변경 적용·완료 검증"]
+    G -- "검토 결과·다음 작업" --> O
+    O <--> K["로컬 지식·실행 기록"]
+```
+
+| 담당 | 책임 |
+| --- | --- |
+| 대화 | 목표와 결정 정리, 작업 분해, 명시적인 위임, 결과 확인과 다음 지시 |
+| 작업 도구 | 전달받은 범위의 조사·계획·구현·문서 작성; 부족한 입력은 장애로 반환 |
+| 하네스 | 결과 형식·수정 경로·원본 해시 검사, 수정안 적용, 테스트·독립 검토 실행, 기록 저장 |
+
+위임은 **목적·읽을 범위·수정할 파일·금지 사항·산출물·완료 조건**을 갖습니다. 필요한 현재 지식과
+선행 작업 결과만 선택해 전달합니다. 작업 도구는 목표를 확장하거나 다른 도구에 재위임하지 않습니다.
+읽기 전용 CLI가 수정안을 반환하고 하네스가 검증 후 적용합니다. 도구의 `done`은 맡긴 작업의
+완료이며, 개발 전체 완료는 기존 게이트가 판정합니다. 문서·설명은 내용·완료 조건 확인을 거칩니다.
+
+지시의 범위와 공급자 권한은 읽기 동작을 제한하며, 파일별 OS 격리를 제공하는 것은 아닙니다.
+실제 적용되는 수정은 정확한 허용 경로와 원본 해시로 검사합니다. 자세한 계약은
+[위임 규칙](rules/delegation.md)을 따릅니다.
 
 ## 다시 설명하지 않아도 이어지는 지식
 
@@ -90,10 +118,10 @@ python3 loop-dev/scripts/install.py --target /absolute/path/to/project
 
 | 용도 | 명령 |
 | --- | --- |
-| 공통 작업 | `work open`, `work goal`, `work start`, `work context`, `work finish` |
+| 공통 작업 | `work open`, `work goal`, `work start`, `work delegate`, `work context`, `work finish` |
 | 지식 재사용·갱신 | `knowledge context`, `knowledge remember`, `knowledge get`, `knowledge history` |
 | 프로젝트 연결 | `knowledge projects`, `knowledge attach` |
-| 개발 | `init`, `validate`, `doctor`, `plan-review`, `freeze`, `start`, `checkpoint`, `finish` |
+| 개발 | `init`, `delegate`, `validate`, `doctor`, `plan-review`, `freeze`, `start`, `checkpoint`, `finish` |
 | 맥락·복구 | `context`, `status`, `note`, `block`, `resume`, `abort`, `session`; 공통 작업은 `work` 하위 명령 |
 
 | 위치 | 내용 |
@@ -101,7 +129,8 @@ python3 loop-dev/scripts/install.py --target /absolute/path/to/project
 | `.loop/goals/<id>/` | 개발 목표와 최초 진단; Git 포함 권장 |
 | `.loop/state/<id>/` | 개발 상태·검증 로그·맥락·`status.md`; Git 제외 |
 | `.loop/state/sessions/` | 개발 세션의 분석과 이전 답변; Git 제외 |
-| `LOOP_KB_HOME/knowledge.sqlite3` | 공통 지식·프로젝트·작업 및 이전 버전 |
+| `LOOP_KB_HOME/knowledge.sqlite3` | 공통 지식·프로젝트·작업·위임·실행 예산 및 이전 버전 |
+| `.loop/state/<id>/delegations/`, `LOOP_KB_HOME/runs/` | 각각 개발·공통 작업의 지시, 결과, 원본과 로그 |
 | `LOOP_KB_HOME/views/` | 같은 기록에서 생성한 Markdown과 JSON 뷰 |
 
 공통 `work finish`로 개발 게이트를 우회할 수 없습니다. 개발 완료에는 실제 검사와 새로운
@@ -119,8 +148,9 @@ git diff --check
 ```
 
 외부 패키지 없이 임시 Git 저장소와 **가짜 Claude/Codex CLI**로 게이트, 복구, 지식 재사용, 문서 생성,
-설치를 검증합니다. 실제 계정의 모델 호출 품질은 검증하지 않습니다. 첫 개발 실행의 `plan-review`가
-실제 환경 연동을 확인합니다. CI는 macOS/Linux × Python 3.10/3.12입니다.
+설치와 위임 범위·수정 적용을 검증합니다. 실제 계정의 모델 호출 품질은 검증하지 않습니다.
+시작 전 읽기 전용 분석 위임으로 작업 CLI를, 개발 `plan-review`로 검토 CLI를 확인합니다.
+호스트가 중첩 CLI 실행을 금지하면 제한을 우회하지 않고 시작 전에 해결하거나 장애로 기록합니다. CI는 macOS/Linux × Python 3.10/3.12입니다.
 
 - [공통 작업과 지식 운영](docs/knowledge.md)
 - [설계와 상태 전이](docs/architecture.md)

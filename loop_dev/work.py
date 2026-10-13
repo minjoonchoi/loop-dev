@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 import uuid
+from contextlib import nullcontext
+from pathlib import Path
 
 from .contract import identifier
 from .knowledge import KnowledgeBase
-from .storage import LoopError, digest, now
+from .storage import LoopError, digest, locked, now
 from .writing import concise
 
 
@@ -18,16 +20,20 @@ class Work:
     def __init__(self, knowledge=None):
         self.knowledge = knowledge or KnowledgeBase()
 
-    def open(self, kind, title, provider, paths, session_id=None):
+    def open(self, kind, title, provider, paths, session_id=None, worker=None):
         if kind not in KINDS or kind == "development":
             raise LoopError("Development work uses init and its existing development gates")
         concise(title, "Task title", 120)
         if not paths:
             raise LoopError("A task needs a title and at least one working directory")
+        worker = worker or provider
+        if worker not in ("claude", "codex"):
+            raise LoopError("Worker must be claude or codex")
         session = self.knowledge.session(provider, session_id)
         locations = [self.knowledge.attach(path) for path in paths]
         value = {"id": "work-" + uuid.uuid4().hex, "kind": kind, "title": title,
                  "phase": "goal_setting", "session_id": session["id"], "provider": provider,
+                 "worker": worker,
                  "locations": sorted({x["id"] for x in locations}),
                  "project_ids": sorted({x["project_id"] for x in locations}),
                  "goal": None, "notes": [], "result": None, "created_at": now(), "updated_at": now(),
@@ -78,6 +84,14 @@ class Work:
             if (not isinstance(item, dict) or item.get("basis") not in ("user", "repository-rule", "delegated")
                     or not all(isinstance(item.get(k), str) and item[k].strip() for k in ("answer", "applies_to", "evidence"))):
                 raise LoopError("Decisions need answer, basis, applies_to and original evidence")
+        execution = goal.get("execution", {})
+        if not isinstance(execution, dict) or set(execution) - {"max_worker_calls", "worker_timeout_seconds", "max_run_seconds"}:
+            raise LoopError("Unknown work execution setting")
+        for name, default, maximum in (("max_worker_calls", 40, 200), ("worker_timeout_seconds", 600, 3600),
+                                        ("max_run_seconds", 14400, 604800)):
+            value = execution.get(name, default)
+            if type(value) is not int or not 1 <= value <= maximum:
+                raise LoopError(f"{name} must be an integer between 1 and {maximum}")
         task["goal"] = goal
         self.save(task)
         return self.context(task_id)
@@ -92,6 +106,19 @@ class Work:
                     baseline=self.knowledge.observe(self.locations(task)), started_at=now())
         self.save(task)
         return self.context(task_id)
+
+    def delegate(self, task_id, request, path=None, recover=None):
+        from .delegation import Delegation
+        task = self.load(task_id)
+        locations = self.locations(task)
+        if path is None and len(locations) != 1:
+            raise LoopError("Select --path explicitly for a task with multiple working directories")
+        location = self.knowledge.attach(path) if path is not None else locations[0]
+        if location["id"] not in task["locations"]:
+            raise LoopError("The selected path does not belong to this task")
+        root = Path(location["root"])
+        with locked(root) if location["git"] else nullcontext():
+            return Delegation(self.knowledge, task_id, root).run(request, recover)
 
     def finish(self, task_id, result):
         task = self.load(task_id)
@@ -176,11 +203,12 @@ class Work:
         context = self.knowledge.context(self.locations(task), task["session_id"], task_id)
         instructions = {
             "goal_setting": "Reuse knowledge, define the outcome/deliverable/criteria, ask only unresolved human-owned choices, then start.",
-            "working": "Perform the requested work, check its criteria, save supported knowledge and finish. No mandatory iterative loop or cross-provider review.",
+            "working": "Delegate the required work with exact scope and deliverables, inspect its result, check criteria and finish. No mandatory iterative loop or cross-provider review.",
             "completed": "Report the recorded result. A new request gets its own goal and reuses applicable knowledge.",
             "blocked": "Report the actual obstacle; recover within existing authority and resume. Do not ask mid-work questions.",
             "aborted": "Preserve the historical record; do not report success.",
         }
-        return {"task": task, "knowledge": context, "document": str(self.knowledge.home / "views/task" / (task_id + ".md")),
+        return {"task": task, "knowledge": context, "delegations": self.knowledge.delegations(task_id),
+                "document": str(self.knowledge.home / "views/task" / (task_id + ".md")),
                 "next": instructions.get(task["phase"], "Inspect the saved state")
                 if task["kind"] != "development" else "Use repository context and development gates; knowledge history cannot mark development complete."}

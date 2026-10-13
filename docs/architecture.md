@@ -2,13 +2,15 @@
 
 ## Core decision
 
-The user's entry point is a Claude Code or Codex conversation. The active model owns
-discovery, clarification, requirements analysis, implementation, root-cause analysis
-and tactical replanning. Portable scripts own deterministic gates and durable state.
-The opposite CLI provides independent development reviews. Other work has an
-evidence-backed content/completion check by the active agent, without a mandatory loop.
-There is no provider SDK, nested
-same-provider implementer, background daemon or vendor-specific orchestrator.
+The user's entry point is a Claude Code or Codex conversation. It orchestrates goal
+setting, scoped assignments, evidence checks, knowledge reconciliation and reporting.
+Actual analysis, planning, implementation and writing are delegated to bounded workers.
+Portable scripts validate worker results, apply allowed proposals, run deterministic
+gates and persist state. The opposite provider to the implementation worker reviews
+development. Other work has an evidence-backed content/completion check by the
+orchestrator without a mandatory loop. There is no SDK, API-key requirement or daemon.
+Worker CLIs can use either provider. Existing vendor/host restrictions on nested calls
+are preserved: preflight must establish a usable worker, not bypass such restrictions.
 
 This division makes the same workflow available in both environments while keeping
 the user's responsibility to the goal and genuinely human-owned decisions. Calling
@@ -24,7 +26,8 @@ to the conversation model, not a keyword parser or provider event hook.
 
 | Responsibility | Implementation |
 | --- | --- |
-| Shared behavioral policy | `rules/workflow.md`, `context.md`, `quality.md` |
+| Shared behavioral policy | `rules/workflow.md`, `delegation.md`, `context.md`, `quality.md` |
+| Bounded delegated work | `delegation.py`: explicit assignment, read-only worker, validated patch application |
 | Common goal setting and work | `work.py`, `rules/work.md`; development delegates to existing gates |
 | Cross-project knowledge | `knowledge.py`; local SQLite, scoped records and dependency checks |
 | Readable records and derived views | `writing.py`, `rules/writing.md`; deterministic Markdown, concise authored fields |
@@ -36,6 +39,50 @@ to the conversation model, not a keyword parser or provider event hook.
 | Independent review | `providers.py` invokes the opposite provider and validates structured output |
 | Bounded subprocesses | `process.py`, argv arrays, stdin EOF, process-group timeout |
 | Freshness/concurrency | `storage.py`, hashes, atomic JSON, POSIX flock |
+
+## Assignment boundary
+
+`delegate GOAL` and `work delegate TASK` run one explicit assignment from a JSON input.
+The same protocol is used for both providers: instruction, read paths, exact write
+paths, prohibitions, named deliverables, completion criteria, selected knowledge IDs
+and prerequisite assignment IDs. A common task with multiple roots must select one
+root per invocation. Worker status is distinct from parent goal status.
+
+Workers receive only selected current knowledge and fresh prerequisite outputs, plus
+the parent goal, decisions, initial diagnosis, notes, latest gate and prior failure as
+context. Source files are indexed inside explicit read scopes; applicable rules are
+added to that list. Context is evidence, never additional delegated authority. Workers
+cannot recursively invoke the harness, ask users, redelegate or change rules/state.
+Missing scope or information returns a precise blocker to the orchestrator.
+
+Both CLI transports are read-only. Proposed edits are complete UTF-8 file contents
+or deletions with original hashes. All proposals are checked before the first edit:
+exact allowed paths, no wildcards/traversal/symlinks, no instruction/provider/state
+edits, no ignored write targets, matching hashes and unchanged parent/source state.
+The applier records originals, preserves modes and uses atomic replacement per file.
+After apply it checks for unexpected source, branch, rule or parent changes. File
+operations are not a multi-file transaction: a filesystem error can leave partial
+edits, which remain recorded with originals. Nothing resets or cleans user changes.
+
+Assignment IDs are immutable and bound to a working location. Repeating a completed
+request reuses it only with the same parent, source and selected handoff evidence.
+Dependencies must have a successful result that still matches their own location,
+including handoffs across directories in one task. Read sets support scoped context selection; they are not per-file
+OS access controls. Provider permissions and host policy still govern actual reads,
+external tools and hooks. Semantic compliance remains an orchestrator/reviewer check.
+
+Task and location locks serialize workers; call budgets are shared across all IDs
+in a task. At most three attempts per ID, default 40 calls per task, and per-call
+(default 600 seconds) and working-time budgets apply. Retry/resume retains counts;
+preflight clarification does not consume working elapsed time. Recovery of an
+interrupted call requires inspection and an explicit recovery reason.
+
+Every attempt retains its prompt, schema, process logs and available result/originals.
+SQLite records current assignments and prior versions; context includes a compact
+index and Markdown is derived from the same records. Findings become task-scoped
+drafts, never automatic facts. The orchestrator reconciles evidence before promotion.
+`done` never changes a parent goal to completed; development gates and common content
+checks retain that responsibility.
 
 ## Goal versus current code
 
@@ -127,8 +174,8 @@ build manifest excerpts, test paths, milestone progress, latest gate and accumul
 discoveries. Its `next` action routes the active conversation to clarification,
 implementation, final verification, recovery or reporting.
 
-The agent reads the relevant source and tests using this index. It logs new findings
-with evidence, adjusts tactics within the frozen target, and passes the accumulated
+The orchestrator uses this index to assign source analysis and implementation. It
+inspects returned evidence, adjusts tactics within the frozen target, and passes the accumulated
 notes to the next independent review. Review failures become repair instructions, and
 test failures retain exact commands and log paths. This replaces the user's serial
 context-feeding with an evidence-driven agent loop.
@@ -192,7 +239,7 @@ first context read. Reconciliation is request-driven, not a background watcher.
 
 ## Review protocol
 
-| Implementer conversation | Read-only reviewer |
+| Implementation worker | Read-only reviewer |
 | --- | --- |
 | Claude Code | `codex --ask-for-approval never --sandbox read-only exec ...` |
 | Codex | `claude -p --permission-mode dontAsk --tools Read,Glob,Grep ...` |
@@ -234,6 +281,6 @@ The workflow is cooperative, not tamper-proof: a process that can modify the rep
 can also edit state or bypass the scripts. Existing host permissions remain essential.
 
 The implementation deliberately keeps commit/PR/deployment outside automatic engine
-side effects. The active conversation performs the user's pre-authorized delivery
-actions and reports their actual outcome. Core `completed` means verified development;
+side effects. The active conversation delegates pre-authorized delivery actions to explicit host
+tool calls and reports their actual outcome. Read-only workers cannot publish. Core `completed` means verified development;
 it does not itself assert that a remote deployment or merge occurred.

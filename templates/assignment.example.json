@@ -1,0 +1,16 @@
+{
+  "id": "inspect-note-storage",
+  "kind": "analysis",
+  "instruction": "Trace the note persistence path for acceptance A1 and identify the missing implementation work with source evidence.",
+  "read_paths": ["src/notes/", "tests/test_notes_acceptance.py", "pyproject.toml"],
+  "write_paths": [],
+  "prohibited": ["Do not edit code or rules, change the CLI contract, add features or start other workers."],
+  "deliverables": [
+    {"id": "storage-analysis", "description": "Current write/read path, missing behavior and exact source references."}
+  ],
+  "criteria": [
+    {"id": "storage-path", "description": "Identify persistence entry points and evidence for cross-process reload or its absence."}
+  ],
+  "knowledge_ids": [],
+  "depends_on": []
+}

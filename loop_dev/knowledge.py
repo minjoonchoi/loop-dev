@@ -96,8 +96,8 @@ class KnowledgeBase:
 
     def document(self, kind, key):
         from .storage import write_text
-        from .writing import task_document, topic_document
-        if kind not in ("task", "topic"):
+        from .writing import delegation_document, task_document, topic_document
+        if kind not in ("task", "topic", "delegation"):
             return
         # Derived views are repairable. Serialize rendering with writers, and reread
         # committed data so a delayed exporter cannot overwrite a newer record.
@@ -105,12 +105,24 @@ class KnowledgeBase:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute("SELECT body FROM records WHERE kind=? AND id=?", (kind, key)).fetchone()
             value = json.loads(row[0])
+            if kind == "task":
+                value["delegations"] = self.delegations(key, db)
             folder = self.home / "views" / kind
+            render = {"task": task_document, "topic": topic_document, "delegation": delegation_document}[kind]
             outputs = {folder / (key + ".json"): json.dumps(value, ensure_ascii=False, indent=2) + "\n",
-                       folder / (key + ".md"): (task_document if kind == "task" else topic_document)(value)}
+                       folder / (key + ".md"): render(value)}
             for path, content in outputs.items():
                 if not path.exists() or path.read_text(encoding="utf-8") != content:
                     write_text(path, content)
+
+    def delegations(self, task_id, db=None):
+        if db is None:
+            with self.connection() as connection:
+                return self.delegations(task_id, connection)
+        values = [json.loads(row[0]) for row in db.execute("SELECT body FROM records WHERE kind='delegation'")]
+        return [{**{k: x.get(k) for k in ("id", "provider", "status", "summary", "error", "attempts", "applied", "result")},
+                 "assignment_id": x["request"]["id"], "kind": x["request"]["kind"]}
+                for x in sorted(values, key=lambda v: v["started_at"], reverse=True) if x["task_id"] == task_id]
 
     def document_context(self, value):
         from .storage import write_text
@@ -391,7 +403,8 @@ class KnowledgeBase:
         phase = {"draft": "goal_setting", "ready": "goal_setting", "running": "working"}.get(state["phase"], state["phase"])
         record = {"id": self.development_id(location, state["id"]), "kind": "development", "title": contract["title"],
                   "phase": phase, "execution_phase": state["phase"], "session_id": state["session_id"],
-                  "provider": contract["execution"]["implementer"], "locations": [location["id"]],
+                  "provider": contract["execution"].get("orchestrator", contract["execution"]["implementer"]),
+                  "worker": contract["execution"]["implementer"], "locations": [location["id"]],
                   "project_ids": [location["project_id"]], "goal_id": state["id"], "goal": contract,
                   "discovery": discovery, "notes": state["notes"], "updated_at": state["updated_at"],
                   "reason": state.get("block_reason"), "next_action": next_action,

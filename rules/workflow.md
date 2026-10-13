@@ -4,7 +4,8 @@ Enter through `work.md` to select the task type. Apply `writing.md` to status,
 analysis and results; keep detailed evidence in linked records.
 
 This is the single workflow for Claude Code and Codex. The conversation that received
-the goal is the implementer and orchestrator. The other CLI reviews. The user must
+the goal is the orchestrator. Explicitly assigned CLI workers implement; the opposite
+provider to the implementation worker reviews. Follow `delegation.md` for every handoff. The user must
 not have to feed source locations, missing dependencies, error explanations, or next
 steps one prompt at a time. Run the commands below yourself; do not hand the user a
 manual checklist to operate the loop.
@@ -48,12 +49,14 @@ product scope beyond the user's goal or wait for repeated "next" instructions.
 
 - Follow the user's goal and applicable repository instructions. Inspect nested
   `AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md` and project rules before editing.
-- Read this file, `context.md`, and `quality.md`. Project-specific rules remain in
+- Read this file, `delegation.md`, `context.md`, and `quality.md`. Project-specific rules remain in
   their original files; reference them in the contract rather than duplicating them.
-- A prompt explicitly assigning a read-only review is a reviewer task. Review only,
-  return the requested JSON, and never start a new development loop.
-- The implementer can be Claude or Codex. Do not invent the provider or switch it
-  after freeze. Use the actual current conversation environment.
+- An explicit worker/reviewer assignment is a bounded tool task. Return its schema
+  only; never expand scope, redelegate, ask the user or start another loop.
+- `orchestrator` identifies the actual conversation; `implementer` identifies its
+  implementation worker. Both can be Claude or Codex. The session belongs to the
+  orchestrator; the independent reviewer is opposite to the worker. Do not switch
+  either provider after freeze. Do not bypass vendor restrictions on nested CLI calls.
 - Python 3.10+, Git, Claude Code and Codex CLIs on macOS/Linux are required. Use
   existing CLI authentication and permissions. Do not bypass permission systems.
 
@@ -62,10 +65,12 @@ product scope beyond the user's goal or wait for repeated "next" instructions.
 For a new ordinary development request, run this command yourself:
 
 ```sh
-python3 .loop/loop.py init goal-id --title "Desired result" --implementer codex
+python3 .loop/loop.py init goal-id --title "Desired result" --implementer codex --orchestrator codex
 ```
 
-Use `claude` when working inside Claude Code. Read the returned context file.
+Set `--orchestrator claude` inside Claude Code. The worker defaults to the same
+provider in ordinary use; an authorized alternative may be set before freeze. Test
+a read-only analysis assignment before start to verify the worker CLI. Read context.
 For a continuing goal, run `context goal-id` instead of initializing again.
 The first `init` creates a local session and returns its ID. For a **new goal in this
 same conversation**, pass `--session SESSION_ID` to `init`; do not create a new session
@@ -75,10 +80,11 @@ performs these actions; the user only supplies goals and unresolved human decisi
 
 1. Define observable target behavior, users, scope, exclusions, requirements and
    acceptance scenarios before judging the current implementation.
-2. Reuse applicable current session analysis first. Inspect the inventory, rules,
-   source, callers, tests, data and interfaces for missing or stale topics. Record
-   concise summaries and dependencies with `session remember`. Run bounded, read-only
-   discovery commands as needed. Inspect official documentation for uncertain integrations.
+2. Reuse applicable current session analysis first. Delegate bounded analysis of
+   missing/stale source, callers, tests, data and interfaces. Inspect the returned
+   evidence and save supported summaries with `session remember`. Request official
+   documentation through explicitly scoped lookup tools for uncertain integrations.
+   Provide those references to the worker; do not ask the user to narrate technical facts.
 3. Put findings and per-requirement gaps in `discovery.json`. Put desired behavior
    and acceptance in `contract.json`. Empty, partial, mock-only or broken code means
    more work. It is never a reason to silently downgrade the target to an MVP.
@@ -143,12 +149,15 @@ Repeat until the goal is complete:
 1. Run `context goal-id` and read its file, especially `session.reusable`,
    `session.stale`, `next`, `latest_gate`, notes and unfinished acceptance.
    This reconstructs the next prompt automatically without a new repository-wide analysis.
-2. Investigate technical gaps yourself using saved end-to-end paths and dependencies.
-   After edits, refresh context and update affected analysis topics from the actual
-   changes. Do not simply restamp old summaries or re-investigate unaffected topics.
-3. Implement the next milestone completely. Include integration, error handling,
-   migration/compatibility and documentation required by the target. Do not leave a
-   stub, fake success, disabled test or disconnected screen as finished work.
+2. Create explicit analysis/planning assignments for remaining gaps, using saved
+   paths and dependencies. Pass only necessary current knowledge and prerequisite
+   assignment IDs. Inspect each result before selecting the next scope.
+3. Delegate complete implementation units with exact allowed file paths, exclusions,
+   deliverables and criteria. Run `delegate goal-id --input .loop/state/assignment.json`.
+   Include required integration, error handling, compatibility and documentation.
+   Inspect validated proposed/applied changes; worker `done` is not milestone success.
+   Refresh affected knowledge after changes. Do not restamp stale summaries or redo
+   unaffected analysis. Do not accept stubs, fake success or weakened tests.
 4. Record meaningful discoveries, decisions and adjusted implementation tactics:
 
    ```sh
@@ -165,7 +174,7 @@ Repeat until the goal is complete:
    python3 .loop/loop.py checkpoint goal-id --milestone M1
    ```
 
-6. When a check/review fails, diagnose the cause, repair implementation, refresh
+6. When a check/review fails, delegate bounded diagnosis and repair with its evidence, refresh
    context and retry within the fixed budget. Do not ask the user how to debug it.
    If `blocked` is retryable, repair the external/setup problem within existing
    authority, run `resume`, and continue. Never widen authority to force progress.

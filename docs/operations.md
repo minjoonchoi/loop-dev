@@ -11,7 +11,9 @@
    규칙이 하네스를 기본 적용하며, 에이전트가 목표를 구체화하고 `doctor`, `plan-review`를 실행합니다.
 4. `doctor`는 설치·버전만 확인합니다. 상대 CLI를 실제 호출하는 `plan-review`가 인증,
    필요한 플래그, 읽기 도구, 구조화 결과를 확인합니다.
-5. 부모 대화에서 구현·테스트 실행에 필요한 권한과 외부 환경을 시작 전에 준비합니다.
+5. 읽기 전용 분석을 `delegate`로 실행해 작업 CLI도 확인합니다. `orchestrator`는 대화 환경,
+   `implementer`는 작업 CLI입니다. 중첩 호출 제한이 있으면 우회하지 않고 시작 전에 사용할
+   작업 도구를 정합니다. 하네스의 수정안 적용·테스트에 필요한 권한과 외부 환경도 준비합니다.
 
 사용자가 조사·질문·검토·재시도 절차를 프롬프트로 설명할 필요는 없습니다. 에이전트가
 저장된 규칙과 맥락으로 수행합니다. 하네스 이름이나 별도 명령도 필수 입력이 아닙니다.
@@ -22,11 +24,11 @@
 수 있으므로 사전 단계에서 입력 대기 여부를 확인합니다. 실행 중 외부 프로세스가 입력을
 기다리더라도 명령의 stdin은 EOF이고 시간 제한이 적용됩니다.
 
-## 검토 어댑터
+## 작업·검토 어댑터
 
 Codex는 `exec`, `--output-schema`, `--output-last-message`, `--ephemeral`을 사용합니다.
 승인 정책은 `never`, 샌드박스는 `read-only`입니다. 사용자에게 승인 프롬프트를 띄워
-기다리는 방식으로 검토하지 않습니다.
+기다리는 방식으로 작업하거나 검토하지 않습니다. 일반 디렉터리 작업에는 `--skip-git-repo-check`를 추가합니다.
 
 Claude는 print 모드와 `--output-format json`, `--json-schema`를 사용하며
 `structured_output`을 검증합니다. `dontAsk`와 읽기 도구 목록을 지정하고 별도 MCP 없이
@@ -36,10 +38,13 @@ Claude는 print 모드와 `--output-format json`, `--json-schema`를 사용하�
 가능 여부는 시작 전에 준비합니다. 상대 도구를 사용할 수 없으면 같은 도구 검토로 조용히
 대체하지 않습니다.
 
-공식 연동 문서(2026-10-12 확인):
+작업 도구는 수정안을 구조화 결과로 반환하며 파일을 직접 쓰지 않습니다. 하네스가 허용 경로와
+원본 해시를 확인한 뒤 적용합니다. 위임 필드와 복구는 [위임 규칙](../rules/delegation.md)을 따릅니다.
+
+공식 연동 문서(2026-10-13 확인):
 
 - [Codex 비대화형 실행](https://learn.chatgpt.com/docs/non-interactive-mode)
-- [Codex CLI 명령](https://learn.chatgpt.com/docs/developer-commands?surface=cli)
+- [Codex CLI 명령](https://learn.chatgpt.com/docs/cli/reference)
 - [Claude Code 프로그램 실행](https://code.claude.com/docs/en/headless)
 - [Claude Code CLI 참조](https://code.claude.com/docs/en/cli-reference)
 
@@ -57,8 +62,9 @@ Claude는 print 모드와 `--output-format json`, `--json-schema`를 사용하�
 | 재시도/전체 시간 한도 초과 | 완료로 표시하지 않고 blocked, 동일 목표를 무한 반복하지 않음 |
 | 세션 맥락 유실 | 같은 환경에서 context 명령의 파일을 읽고 이어감 |
 
-전체 시간 한도는 게이트 진입과 외부 명령 실행 시 확인합니다. 부모 대화가 코드 편집 중일 때
-스크립트가 별도 감시 프로세스로 중단시키는 구조는 아닙니다.
+전체 시간 한도는 게이트와 위임 진입, 외부 명령 실행 시 확인합니다. 대화가 다음 지시를
+준비하는 동안 별도 감시 프로세스가 동작하지는 않습니다. 위임의 실패·차단 결과는 대화가
+검토해 기존 권한 안에서 후속 작업을 정하고, 해결할 수 없으면 부모 목표를 `block`합니다.
 
 재시도 가능한 장애는 기존 권한 내에서 에이전트가 고치고 `resume`합니다. 목표나 허용 범위가
 달라져야 한다면 원래 실행을 성공으로 마감하지 않습니다. 기존 목표를 중단하고 새로운
@@ -96,6 +102,9 @@ python3 .loop/loop.py context my-goal
 
 반환된 `context` 파일의 `state`, `next`, `latest_gate`, `notes`를 읽습니다. 구현 중 세션이
 끝났다면 다음 작업을 이어가고, 게이트 실행 중 종료됐다면 잔여 프로세스와 로그를 확인합니다.
+작업 위임이 `running` 또는 `interrupted`에 남았다면 원본·적용 파일·잔여 프로세스를 먼저
+확인한 뒤 같은 입력에 `--recover REASON`을 붙여 재시도합니다. 중단 복구는 범위 변경이나
+예산 초기화를 허용하지 않습니다.
 기록에 `inflight`가 남아 있으면 해당 게이트를 호출했을 때 중단 상태를 감지합니다. 이후
 `resume`하여 재검증합니다. 이미 소비한 시도 횟수와 시간 한도는 유지합니다.
 
@@ -106,7 +115,7 @@ python3 .loop/loop.py context my-goal
 ## 완료와 전달
 
 `finish`는 개발 검증 완료를 기록합니다. 커밋·PR·병합·배포는 자동 엔진 부작용에 포함되지
-않습니다. 사전 합의된 전달 수준에 맞춰 부모 대화 에이전트가 수행하고 실제 결과를 보고합니다.
+않습니다. 사전 합의된 전달 수준에 맞춰 대화가 별도의 명시적인 도구 호출로 위임하고 실제 결과를 보고합니다.
 커밋을 만들 예정이라면 최종 finish 전에 만듭니다. 완료 뒤 코드나 HEAD를 바꾸면 기존 완료
 기록의 `evidence_current`는 false가 됩니다.
 

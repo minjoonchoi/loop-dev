@@ -66,7 +66,7 @@ class Session:
         return data
 
     def sync_goal(self, state, contract, discovery):
-        data = self.load(contract["execution"]["implementer"])
+        data = self.load(contract["execution"].get("orchestrator", contract["execution"]["implementer"]))
         data["goals"][state["id"]] = {
             "id": state["id"], "title": contract["title"], "phase": state["phase"],
             "outcome": contract["target"]["outcome"], "rules": contract.get("rules", []),

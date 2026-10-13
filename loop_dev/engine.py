@@ -28,15 +28,17 @@ class Engine:
         self.active_path = root / ".loop/state/active.json"
         self.knowledge = knowledge or KnowledgeBase()
 
-    def initialize(self, title, implementer, session_id=None):
+    def initialize(self, title, implementer, session_id=None, orchestrator=None):
         concise(title, "Goal title", 120)
+        orchestrator = orchestrator or implementer
         if self.goal_dir.exists() or self.state_dir.exists():
             raise LoopError(f"Goal already exists: {self.id}")
-        session = Session(self.root, session_id, self.knowledge) if session_id else Session.create(self.root, implementer, self.knowledge)
-        session.load(implementer)
+        session = Session(self.root, session_id, self.knowledge) if session_id else Session.create(self.root, orchestrator, self.knowledge)
+        session.load(orchestrator)
         self.goal_dir.mkdir(parents=True)
         contract = template(self.id, title, implementer)
-        for name in (".loop/rules/workflow.md", "rules/work.md", "rules/writing.md", "rules/workflow.md",
+        contract["execution"]["orchestrator"] = orchestrator
+        for name in (".loop/rules/workflow.md", "rules/work.md", "rules/writing.md", "rules/workflow.md", "rules/delegation.md",
                      "rules/context.md", "rules/quality.md", "AGENTS.md", "CLAUDE.md"):
             if (self.root / name).is_file():
                 contract["rules"].append(name)
@@ -100,7 +102,7 @@ class Engine:
     def session(self, state, contract, discovery):
         if not state.get("session_id"):
             # Upgrade an older goal once, without guessing which conversation owns other caches.
-            state["session_id"] = Session.create(self.root, contract["execution"]["implementer"], self.knowledge).id
+            state["session_id"] = Session.create(self.root, contract["execution"].get("orchestrator", contract["execution"]["implementer"]), self.knowledge).id
             self.save(state, "session-attached")
         session = Session(self.root, state["session_id"], self.knowledge)
         session.sync_goal(state, contract, discovery)
@@ -127,12 +129,14 @@ class Engine:
         work = self.knowledge.record_development(self.root, state, contract, discovery, value.get("evidence_current"),
                                                value["next"]["instruction"])
         value["work"] = {"id": work["id"], "kind": "development", "phase": work["phase"]}
+        value["delegations"] = self.knowledge.delegations(work["id"])
         history = value["session"]["knowledge"]["tasks"]
         history[:] = [item for item in history if item["id"] != work["id"]]
         history.insert(0, task_summary(work))
         write_json(path, value)
         document = self.state_dir / "status.md"
-        rendered = task_document(work).replace(f"[Full record]({work['id']}.json)", "[Full context](context.json)")
+        rendered = task_document({**work, "delegations": value["delegations"]}).replace(
+            f"[Full record]({work['id']}.json)", "[Full context](context.json)")
         if not document.exists() or document.read_text(encoding="utf-8") != rendered:
             write_text(document, rendered)
         return {"goal": self.id, "phase": state["phase"], "session_id": state["session_id"],
@@ -174,6 +178,11 @@ class Engine:
         session.capture_review(state, contract, discovery, report)
         self.refresh()
         return report
+
+    def delegate(self, request, recover=None):
+        from .delegation import Delegation
+        self.refresh()
+        return Delegation(self.knowledge, self.knowledge.development_id(self.knowledge.attach(self.root), self.id), self.root).run(request, recover)
 
     def freeze(self):
         state, contract, discovery = self.load()

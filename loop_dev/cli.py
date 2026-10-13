@@ -25,6 +25,7 @@ def parser():
     init.add_argument("goal")
     init.add_argument("--title", required=True)
     init.add_argument("--implementer", choices=("claude", "codex"), required=True)
+    init.add_argument("--orchestrator", choices=("claude", "codex"), help="Conversation provider; defaults to implementer")
     init.add_argument("--session", help="Reuse the current conversation's session ID for the next goal")
     session = commands.add_parser("session", help="Persist and reuse analysis in the current conversation")
     session_commands = session.add_subparsers(dest="session_command", required=True)
@@ -41,6 +42,10 @@ def parser():
     checkpoint = commands.add_parser("checkpoint")
     checkpoint.add_argument("goal")
     checkpoint.add_argument("--milestone", required=True)
+    delegate = commands.add_parser("delegate", help="Execute one explicit bounded worker assignment")
+    delegate.add_argument("goal")
+    delegate.add_argument("--input", type=Path, required=True)
+    delegate.add_argument("--recover", help="Reason for retrying an inspected interrupted worker")
     for name in ("block", "abort"):
         sub = commands.add_parser(name)
         sub.add_argument("goal")
@@ -56,8 +61,14 @@ def parser():
     opened.add_argument("--kind", choices=KINDS, required=True)
     opened.add_argument("--title", required=True)
     opened.add_argument("--provider", choices=("claude", "codex"), required=True)
+    opened.add_argument("--worker", choices=("claude", "codex"), help="Worker provider; defaults to conversation provider")
     opened.add_argument("--path", type=Path, action="append")
     opened.add_argument("--session")
+    delegated = work_commands.add_parser("delegate")
+    delegated.add_argument("task")
+    delegated.add_argument("--input", type=Path, required=True)
+    delegated.add_argument("--path", type=Path)
+    delegated.add_argument("--recover")
     for name in ("context", "start", "resume"):
         work_commands.add_parser(name).add_argument("task")
     for name in ("goal", "finish"):
@@ -91,10 +102,10 @@ def parser():
             sub.add_argument("--input", type=Path, required=True)
             sub.add_argument("--observed", required=True)
     history = knowledge_commands.add_parser("history")
-    history.add_argument("kind", choices=("topic", "task"))
+    history.add_argument("kind", choices=("topic", "task", "delegation"))
     history.add_argument("id")
     get = knowledge_commands.add_parser("get")
-    get.add_argument("kind", choices=("topic", "task"))
+    get.add_argument("kind", choices=("topic", "task", "delegation"))
     get.add_argument("id")
     return result
 
@@ -125,8 +136,11 @@ def common_command(args, knowledge):
                 raise LoopError("Development gates run per working tree; create a goal per repository in the same session")
             root = repository(project_root(paths[0]))
             with locked(root):
-                return Engine(root, "goal-" + uuid.uuid4().hex[:12], knowledge).initialize(args.title, args.provider, args.session)
-        return work.open(args.kind, args.title, args.provider, paths, args.session)
+                return Engine(root, "goal-" + uuid.uuid4().hex[:12], knowledge).initialize(
+                    args.title, args.worker or args.provider, args.session, args.provider)
+        return work.open(args.kind, args.title, args.provider, paths, args.session, args.worker)
+    if cmd == "delegate":
+        return work.delegate(args.task, read_json(args.input), args.path, args.recover)
     if cmd == "goal":
         return work.define(args.task, read_json(args.input))
     if cmd == "finish":
@@ -162,7 +176,9 @@ def main(argv=None):
                 return 0
             engine = Engine(root, args.goal, knowledge)
             if cmd == "init":
-                output = engine.initialize(args.title, args.implementer, args.session)
+                output = engine.initialize(args.title, args.implementer, args.session, args.orchestrator)
+            elif cmd == "delegate":
+                output = engine.delegate(read_json(args.input), args.recover)
             elif cmd in ("status", "context"):
                 output = engine.refresh()
             elif cmd == "validate":

@@ -3,7 +3,9 @@
 This repository builds the portable development harness, not a target application.
 
 - Read README.md and docs/architecture.md before changing behavior. Keep the
-  conversation-led workflow identical for Claude Code and Codex.
+  conversation-orchestrated, tool-executed workflow identical for Claude Code and Codex.
+- Tool assignments must state purpose, read/write scope, prohibited actions, outputs
+  and completion criteria. Workers cannot expand scope, ask users or delegate again.
 - Use Python 3.10+ standard library only. Support macOS and Linux; no runtime package
   installation, vendor SDK, API key requirement or global hook modification.
 - Keep goals independent of existing code maturity. Technical context gathering,

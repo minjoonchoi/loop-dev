@@ -82,14 +82,20 @@
 
 ```json
 {
+  "orchestrator": "codex",
   "implementer": "codex",
+  "max_worker_calls": 40,
+  "worker_timeout_seconds": 600,
   "max_gate_attempts": 3,
   "review_timeout_seconds": 600,
   "max_run_seconds": 14400
 }
 ```
 
-`implementer`는 현재 대화 환경입니다. `codex`이면 Claude, `claude`이면 Codex로 검토합니다.
+`orchestrator`는 현재 대화 환경이며 세션 소유자입니다. `implementer`는 실제 구현을 위임받는
+작업 도구입니다. 검토자는 구현 도구의 반대 공급자입니다. 생략된 `orchestrator`는 기존 계약과의
+호환을 위해 `implementer`와 같게 해석합니다. 작업 도구의 호출 한도는 기본 40회, 각 위임 ID의
+시도는 최대 3회입니다. ID를 새로 만들어도 전체 호출 한도는 초기화되지 않습니다.
 모델은 각 CLI의 기존 설정을 사용합니다. 실행 한도도 사전 계약의 일부이며 실행 중 바꿀 수 없습니다.
 작업별·최종 게이트별 시도 횟수를 각각 기록하고 재개해도 초기화하지 않습니다.
 전체 시간은 `start` 이후 경과한 시간이며 중단 시간도 포함합니다.

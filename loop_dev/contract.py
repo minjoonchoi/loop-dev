@@ -24,7 +24,8 @@ def template(goal_id, title, implementer):
         "decisions": [{"area": area, "answer": "", "basis": "", "rationale": ""}
                       for area in AREAS],
         "open_questions": [], "rules": [], "checks": [], "milestones": [],
-        "execution": {"implementer": implementer, "max_gate_attempts": 3,
+        "execution": {"orchestrator": implementer, "implementer": implementer, "max_worker_calls": 40,
+                      "worker_timeout_seconds": 600, "max_gate_attempts": 3,
                       "review_timeout_seconds": 600, "max_run_seconds": 14400},
     }
 
@@ -128,6 +129,11 @@ def validate(contract, discovery, root):
     if not isinstance(execution, dict):
         return errors + ["execution must be an object"]
     require(execution.get("implementer") in ("claude", "codex"), "implementer must be claude or codex")
+    require(execution.get("orchestrator", execution.get("implementer")) in ("claude", "codex"),
+            "orchestrator must be claude or codex")
+    for key, default, maximum in (("max_worker_calls", 40, 200), ("worker_timeout_seconds", 600, 3600)):
+        val = execution.get(key, default)
+        require(type(val) is int and 1 <= val <= maximum, f"execution.{key} must be 1..{maximum}")
     for key, maximum in (("max_gate_attempts", 20), ("review_timeout_seconds", 3600), ("max_run_seconds", 604800)):
         val = execution.get(key)
         require(type(val) is int and 1 <= val <= maximum, f"execution.{key} must be 1..{maximum}")

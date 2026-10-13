@@ -53,7 +53,7 @@ def next_action(state, contract):
     phase = state["phase"]
     if phase == "draft":
         return {"action": "clarify", "instruction": (
-            "Read reusable session analysis and earlier answers first; investigate only missing or stale context. "
+            "Read reusable session analysis and earlier answers first; delegate analysis for missing or stale context. "
             "Derive requirements, gaps, acceptance checks and milestones for this goal. "
             "Ask only unresolved human-owned choices in a consolidated preflight round. Fill contract and discovery, "
             "then run plan-review. If it passes, freeze and start without requesting a redundant confirmation.")}
@@ -64,8 +64,8 @@ def next_action(state, contract):
         todo = [x for x in contract["milestones"] if x["id"] not in completed]
         if todo:
             return {"action": "implement", "milestone": todo[0], "instruction": (
-                "Read the latest gate and evidence. Investigate missing technical context yourself, implement the next "
-                "milestone end to end, repair findings, then call checkpoint. Repeat without asking the user. "
+                "Read the latest gate, assignment results and evidence. Delegate exact analysis/implementation tasks "
+                "for the next milestone and repairs, inspect returned deliverables, then call checkpoint. Repeat without asking the user. "
                 "Use note to persist evidence-backed discoveries/decisions; do not change the frozen target or rules.")}
         return {"action": "finish", "instruction": (
             "Run finish for fresh full acceptance/regression checks and cross-provider review. Repair failures and repeat "

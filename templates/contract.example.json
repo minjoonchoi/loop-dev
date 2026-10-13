@@ -129,7 +129,8 @@
     ".loop/rules/context.md",
     ".loop/rules/quality.md",
     "AGENTS.md",
-    "CLAUDE.md"
+    "CLAUDE.md",
+    ".loop/rules/delegation.md"
   ],
   "checks": [
     {
@@ -190,6 +191,9 @@
     "implementer": "codex",
     "max_gate_attempts": 3,
     "review_timeout_seconds": 600,
-    "max_run_seconds": 14400
+    "max_run_seconds": 14400,
+    "orchestrator": "codex",
+    "max_worker_calls": 40,
+    "worker_timeout_seconds": 600
   }
 }

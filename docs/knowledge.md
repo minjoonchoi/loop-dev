@@ -21,16 +21,20 @@
 python3 .loop/loop.py work open --kind explanation --title "저장 방식 설명" --provider codex --path /project
 python3 .loop/loop.py work goal WORK_ID --input /temporary/goal.json
 python3 .loop/loop.py work start WORK_ID
+python3 .loop/loop.py work delegate WORK_ID --input /temporary/assignment.json --path /project
 python3 .loop/loop.py work finish WORK_ID --input /temporary/result.json
 ```
 
 후속 작업에는 `--session SESSION_ID`를 추가합니다. 여러 디렉터리는 `--path`를 반복합니다.
+`--provider`는 대화, 선택적인 `--worker`는 작업 CLI이며 생략하면 같은 공급자를 씁니다.
+위임은 [위임 규칙](../rules/delegation.md)의 필드를 모두 채웁니다. 여러 경로에 연결된 작업은
+위임할 때 한 경로를 명시해야 합니다. 도구 결과를 확인한 후 전체 완료 조건을 기록합니다.
 유형은 `document`, `explanation`, `research`, `review`, `planning`입니다.
 `development`는 기존 개발 엔진에 위임하므로 `work finish`로 완료할 수 없습니다.
 
 | 입력 | 필드 |
 | --- | --- |
-| 목표 | `outcome`, `deliverable`, `criteria[{id, description}]`, `decisions`, `open_questions` |
+| 목표 | `outcome`, `deliverable`, `criteria[{id, description}]`, `decisions`, `open_questions`, 선택적 `execution` |
 | 결과 | `summary`, `outputs`, `checks[{criterion_id, satisfied, evidence}]`, 선택적 `knowledge` |
 | 결정 | `answer`, `basis`, `applies_to`, 원래 답변의 `evidence` |
 
@@ -38,6 +42,9 @@ python3 .loop/loop.py work finish WORK_ID --input /temporary/result.json
 미해결 질문이 있으면 시작하지 않습니다. 시작한 목표는 고정됩니다. 모든 완료 조건을 근거와 함께
 확인해야 완료할 수 있으며, 미충족 조건은 작업 중 상태로 남습니다. 별도 검토 모델이나 반복 횟수는 없습니다.
 내용 충족 여부는 에이전트가 실제 전달물을 확인해 기록하는 것으로, 스크립트의 독립 검증은 아닙니다.
+
+`execution`의 기본 한도는 `max_worker_calls: 40`, `worker_timeout_seconds: 600`,
+`max_run_seconds: 14400`입니다. 작업 시작 뒤에는 고정되며 새 위임 ID나 재개로 초기화하지 않습니다.
 
 상태는 `work context WORK_ID`, 발견 사항은 `work note WORK_ID --text TEXT --evidence REF`,
 장애는 `work block WORK_ID --reason TEXT`로 기록합니다. 복구는 `work resume WORK_ID`,
@@ -86,8 +93,8 @@ python3 .loop/loop.py knowledge remember --path /project --session SESSION_ID --
 | 명령 | 용도 |
 | --- | --- |
 | `knowledge context [--query TEXT] [--limit 20] [--offset 0]` | 현재 지식, 재확인 항목, 초안, 작업 이력 |
-| `knowledge get topic\|task ID` | 전체 단일 기록과 문서 복구 |
-| `knowledge history topic\|task ID` | 현재 기록과 이전 버전 |
+| `knowledge get topic\|task\|delegation ID` | 전체 단일 기록과 문서 복구 |
+| `knowledge history topic\|task\|delegation ID` | 현재 기록과 이전 버전 |
 | `knowledge projects` | 프로젝트·작업 위치 목록 |
 | `knowledge attach --path PATH [--project PROJECT_ID]` | 디렉터리 연결·이동 후 위치 갱신 |
 
@@ -95,7 +102,9 @@ python3 .loop/loop.py knowledge remember --path /project --session SESSION_ID --
 나머지의 조회 경로를 표시합니다. 페이지 밖의 자료도 보존하며, 읽기 전에 없다고 판단하지 않습니다.
 
 `views/task/<id>.md`는 결과·상태·근거·다음 에이전트 행동을, `views/topic/<id>.md`는 결론·범위·상태·근거를
-표시합니다. `views/context/`는 조회 시점에 확인한 적용 가능성을 보여줍니다. 각 문서는 전체 JSON을 연결합니다.
+표시합니다. `views/delegation/<id>.md`는 위임 범위·산출물·완료 조건·적용 파일·장애를 표시합니다.
+위임의 새 발견은 작업 범위의 초안으로 저장하며, 확인 후에만 확정 지식으로 갱신합니다.
+`views/context/`는 조회 시점에 확인한 적용 가능성을 보여줍니다. 각 문서는 전체 JSON을 연결합니다.
 확정 상태만으로 현재 유효하다고 간주하지 않으며, 재사용 전에 맥락을 확인합니다.
 
 원본은 SQLite와 개발 상태 JSON입니다. Markdown은 이 데이터로 생성하며 수작업으로 편집하지 않습니다.

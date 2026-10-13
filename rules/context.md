@@ -24,8 +24,8 @@ Before asking the user anything, classify the missing context:
 
 The generated context contains repository paths, manifest excerpts, rules, target,
 gaps, milestones, latest gate and discoveries. It is an index, not proof that every
-source file has been understood. Follow the relevant paths and cite concrete
-evidence. Never treat a filename alone as evidence of a complete feature.
+source file has been understood. Assign workers only the relevant paths and
+required deliverables using `delegation.md`, then inspect their concrete evidence. Never treat a filename alone as evidence of a complete feature.
 
 ## Session analysis is maintained by the agent
 
@@ -49,7 +49,8 @@ test commands/coverage and answered decisions. Keep focused topic IDs so later e
 replace only relevant summaries. The user never writes these files or runs commands.
 
 1. Read context and retain its `revision` before investigating.
-2. Inspect only missing/stale topics. Write an entry using
+2. Delegate inspection of only missing/stale topics. Reconcile worker draft findings
+   against returned evidence; they are not automatically confirmed. Write an entry using
    `.loop/templates/analysis.example.json` into an ignored `.loop/state/` input file.
 3. Run the following internal action yourself:
 
@@ -97,7 +98,7 @@ new desired behavior against current reusable topics.
 
 Tactical replanning is automatic and continuous: assess the latest evidence, keep
 the original acceptance criteria, choose the next smallest complete change, inspect
-its impact, implement, then validate. If a change affects completed milestones,
+its impact, delegate the scoped implementation, then validate. If a change affects completed milestones,
 re-run relevant checks immediately; the final gate always rechecks the full target.
 
 Do not write secrets into goals, decisions, notes or logs. Reference credential

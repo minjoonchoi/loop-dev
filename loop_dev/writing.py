@@ -88,7 +88,7 @@ def task_document(task):
         lines.extend(["", "**Next (agent):** " + plain(task["next_action"])])
     else:
         next_steps = {"goal_setting": "Resolve remaining choices and define completion criteria.",
-                      "working": "Produce the deliverable and check its completion criteria.",
+                      "working": "Delegate the scoped work, inspect its deliverable and check completion criteria.",
                       "blocked": "Resolve the recorded obstacle within the agreed authority, then resume."}
         if phase in next_steps:
             lines.extend(["", "**Next (agent):** " + next_steps[phase]])
@@ -99,11 +99,35 @@ def task_document(task):
     refs = result.get("outputs", []) + ([result["gate"]] if result.get("gate") else [])
     if refs:
         lines.extend(["", "## Evidence and output", "", *bullets(refs)])
+    if task.get("delegations"):
+        lines.extend(["", "## Delegated work", "", *bullets([
+            f"{x['assignment_id']}: {x['status']} — {x['error'] or x['summary']} ({x['id']})"
+            for x in task["delegations"]])])
     if task.get("notes"):
         note = task["notes"][-1]
         lines.extend(["", "**Latest finding:** " + plain(note.get("text", "")),
                       "", "**Source:** " + plain(note.get("evidence", ""))])
     lines.extend(["", f"[Full record]({task['id']}.json)", ""])
+    return "\n".join(lines)
+
+
+def delegation_document(record):
+    request = record["request"]
+    lines = [f"# {plain(request['id'])}", "", plain(record["summary"]), "",
+             f"**State:** {plain(record['status'])} · **Worker:** {plain(record['provider'])} · **Attempt:** {record['attempts']}",
+             "", "**Assignment:** " + plain(request["instruction"])]
+    lines.extend(["", "**Working directory:** " + plain(record["root"])])
+    for title, items in (("Read scope", request["read_paths"]), ("Allowed edits", request["write_paths"]),
+                         ("Prohibited", request["prohibited"]),
+                         ("Deliverables", [x["id"] + ": " + x["description"] for x in request["deliverables"]]),
+                         ("Completion criteria", [x["id"] + ": " + x["description"] for x in request["criteria"]]),
+                         ("Applied edits", record["applied"])):
+        lines.extend(["", "## " + title, "", *(bullets(items) if items else ["None."])])
+    if record.get("error"):
+        lines.extend(["", "**Obstacle:** " + plain(record["error"])])
+    lines.extend(["", "**Evidence directory:** " + plain(record["directory"]), "",
+                  "Done applies to this assignment only; parent completion uses its own criteria and gates.", "",
+                  f"[Full record]({record['id']}.json)", ""])
     return "\n".join(lines)
 
 

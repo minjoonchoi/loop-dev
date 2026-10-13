@@ -19,13 +19,20 @@ BLOCK = f"""{START}
 ## loop-dev goal setting and work
 
 Use the common goal-setting -> work flow for development, documents, explanations,
-research and planning. Read `.loop/rules/work.md` first. The ordinary request is enough;
+research and planning. Explicitly assigned workers/reviewers execute their assignment
+only; do not start this entry workflow. Otherwise read `.loop/rules/work.md` first. The ordinary request is enough;
 do not require a keyword, slash command, extra operating prompt or redundant approval.
 Interpret intent and explicit limits. Reuse local knowledge before investigating or
 asking questions. When the goal is clear, specify it internally and proceed directly.
 Development alone uses `.loop/rules/workflow.md` with tests and opposite-provider
 review/repair cycles. Documents, explanations, research and planning use one-pass
 work with a content/completion check; do not impose a development loop or second CLI.
+The conversation orchestrates; delegate actual analysis, planning, implementation
+and writing through `.loop/rules/delegation.md`. Every assignment must state purpose,
+read scope, exact allowed edits, prohibited actions, deliverables and completion criteria.
+Workers return scoped results/proposed edits or a precise blocker; no scope expansion,
+user questions, further delegation or direct source writes. Scripts validate and apply
+proposals. Worker completion never replaces the parent completion check.
 The conversation agent maintains the knowledge base and task/session IDs across
 directories. Store evidence, decisions and results with their scope and status;
 drafts/hypotheses must not become confirmed facts. Refresh only relevant stale topics.

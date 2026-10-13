@@ -24,8 +24,13 @@ of a code path or the word "fix" in an explanatory question as a development req
 This is semantic routing by the conversation model, not a substring parser or host hook.
 Progress questions and steering during active work belong to the existing task;
 answer them and continue its authorized scope without opening duplicate explanation tasks.
-An independent reviewer invoked by the development engine is exempt from orchestration:
-return its review only; do not write tasks, knowledge, or recursively invoke reviews.
+An explicitly assigned worker or independent reviewer is exempt from orchestration:
+execute only the supplied assignment and return its schema. Do not write task/knowledge
+state, expand scope, ask users, delegate further or invoke the entry loop.
+
+The conversation orchestrates. Follow `delegation.md` to delegate actual analysis,
+planning, implementation and writing with explicit scope, deliverables and criteria.
+Read saved state, select current knowledge and inspect outputs before the next handoff.
 
 ## 1. Goal setting
 
@@ -42,7 +47,7 @@ return its review only; do not write tasks, knowledge, or recursively invoke rev
 4. If the request and existing knowledge are sufficient, define the goal internally
    and start immediately. Goal setting is not a mandatory questionnaire or approval.
 
-For development, run `init ... --implementer claude|codex [--session SESSION]` and
+For development, run `init ... --implementer WORKER --orchestrator CONVERSATION [--session SESSION]` and
 follow `workflow.md`. `work open --kind development` also creates a development goal.
 It is mirrored into the common task history; only development gates can complete it.
 For work spanning several code repositories, use a development goal per working tree
@@ -63,13 +68,17 @@ across directories and tasks. Use `claude` inside Claude Code. The JSON structur
 in `work-goal.example.json`; the agent creates it in the knowledge directory or an
 ignored temporary location. Do not ask users for IDs, JSON, or procedural prompts.
 No Git repository or opposite-provider CLI is needed for these non-development tasks.
+`--provider` binds the conversation; optional `--worker claude|codex` selects the worker
+(default: conversation provider). Its CLI must be installed/authenticated. Before start,
+use read-only analysis/planning assignments to fill factual gaps.
 
 ## 2. Work
 
 Development repeats implementation -> actual checks -> independent opposite-provider
 review -> repair under its frozen target and finite budgets. No questions after start.
 
-Documents, explanations, research, review and planning perform the requested work,
+Documents, explanations, research, review and planning delegate the requested work
+with `work delegate TASK --input ASSIGNMENT [--path ROOT]`, inspect the returned artifact,
 check the output against its criteria, and finish. There is no prescribed iteration
 count, mandatory cross-review, or requirement to invoke the other provider. Correct
 an actual omission or error when found; do not manufacture a recurring loop.
