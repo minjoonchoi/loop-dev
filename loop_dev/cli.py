@@ -22,6 +22,35 @@ def parser():
     result.add_argument("--root", type=Path, default=Path.cwd(), help="Target repository root")
     result.add_argument("--knowledge-home", type=Path, help="Local knowledge directory (default: LOOP_KB_HOME or ~/.local/share/loop-dev)")
     commands = result.add_subparsers(dest="command", required=True)
+    bench = commands.add_parser("bench", help="Compare plain, reference and candidate harness outcomes")
+    bench_commands = bench.add_subparsers(dest="bench_command", required=True)
+    for name in ("plan", "run"):
+        sub = bench_commands.add_parser(name)
+        sub.add_argument("--suite", type=Path, required=True)
+        sub.add_argument("--candidate", type=Path, required=True)
+        sub.add_argument("--reference-ref", required=True, help="Existing Git commit in the candidate repository")
+        sub.add_argument("--codex-model", required=True)
+        sub.add_argument("--claude-model", required=True)
+        sub.add_argument("--provider", choices=("claude", "codex"), action="append", required=True)
+        sub.add_argument("--repeats", type=int, default=3)
+        sub.add_argument("--seed", type=int, default=0)
+        sub.add_argument("--environment", required=True, help="Fixed host, credentials and configuration profile description")
+        if name == "run":
+            sub.add_argument("--output", type=Path, required=True)
+    for name in ("report", "gate", "judge", "proposal"):
+        sub = bench_commands.add_parser(name)
+        sub.add_argument("run", type=Path)
+        if name in ("report", "gate"):
+            sub.add_argument("--judgments", type=Path)
+        if name == "gate":
+            sub.add_argument("--candidate", type=Path, required=True)
+            sub.add_argument("--suite", type=Path, required=True)
+        if name == "judge":
+            sub.add_argument("--provider", choices=("claude", "codex"), required=True)
+            sub.add_argument("--model", required=True)
+            sub.add_argument("--repeats", type=int, default=2)
+        if name == "proposal":
+            sub.add_argument("--input", type=Path, required=True)
     harness = commands.add_parser("harness", help="Enable or disable the harness for a known conversation")
     harness_commands = harness.add_subparsers(dest="harness_command", required=True)
     enabled = harness_commands.add_parser("on")
@@ -163,6 +192,26 @@ def common_command(args, knowledge):
 def main(argv=None):
     args = parser().parse_args(argv)
     try:
+        if args.command == "bench":
+            from . import benchmark, bench_report
+            cmd = args.bench_command
+            if cmd in ("plan", "run"):
+                values = [args.suite, args.candidate, args.reference_ref,
+                          {"codex": args.codex_model, "claude": args.claude_model},
+                          args.provider, args.repeats, args.seed, args.environment]
+                output = benchmark.prepare(*values) if cmd == "plan" else benchmark.run(*values, args.output)
+                if cmd == "plan":
+                    output["source"] = {k: {p: v[p] for p in ("hash", "ref")} for k, v in output["source"].items()}
+            elif cmd == "judge":
+                output = bench_report.judge(args.run, args.provider, args.model, args.repeats)
+            elif cmd == "gate":
+                output = bench_report.gate(args.run, args.candidate, args.suite, args.judgments)
+            elif cmd == "proposal":
+                output = bench_report.proposal(args.run, args.input)
+            else:
+                output = bench_report.report(args.run, args.judgments)
+            print(json.dumps(output, ensure_ascii=False, indent=2))
+            return 3 if output.get("verdict") == "inconclusive" else 1 if output.get("passed") is False else 0
         knowledge = KnowledgeBase(args.knowledge_home)
         if args.command == "harness":
             harness = Harness(knowledge)

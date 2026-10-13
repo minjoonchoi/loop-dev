@@ -141,6 +141,7 @@ flowchart TD
 | 지식 재사용·갱신 | `knowledge context`, `knowledge remember`, `knowledge get`, `knowledge history` |
 | 프로젝트 연결 | `knowledge projects`, `knowledge attach` |
 | 개발 | `init`, `delegate`, `validate`, `doctor`, `plan-review`, `freeze`, `start`, `checkpoint`, `finish` |
+| 하네스 자체 평가 | `bench plan`, `bench run`, `bench judge`, `bench report`, `bench gate`, `bench proposal` |
 | 맥락·복구 | `context`, `status`, `note`, `block`, `resume`, `abort`, `session`; 공통 작업은 `work` 하위 명령 |
 
 | 위치 | 내용 |
@@ -160,6 +161,21 @@ flowchart TD
 배경 데몬은 없습니다. 요청·맥락 조회·작업 전환 때 기록을 확인하고 갱신합니다. 호스트가 종료되면
 보존된 상태에서 재개합니다. 다른 컴퓨터에서는 필요한 로컬 상태를 의도적으로 옮겨야 합니다.
 
+## 하네스가 실제로 더 나은지 평가
+
+벤치는 같은 요청을 **하네스 없음 / 기존 커밋 / 현재 변경**으로 반복 실행합니다.
+같은 모델·초기 파일·예산을 사용하고, 대화·지식베이스·작업 공간을 각각 분리합니다.
+기능은 외부 검사로, 문서·설명은 익명 결과물의 기준별 평가로 확인합니다.
+완료 선언이나 작업량 자체에는 점수를 주지 않습니다.
+
+특정 과제의 품질 저하, 추가 사용자 질문, 과도한 시간 증가를 발견하면 통과를 막습니다.
+**개선 / 회귀 없음 / 회귀 / 근거 부족**을 구분하고, 실패 근거와 관련 규칙을 연결해
+변경 가설을 저장합니다. 규칙 변경 후 같은 기준으로 재측정하며, 코드나 평가 기준이
+바뀌면 이전 통과 결과가 만료됩니다.
+
+벤치 요청과 실행 방법, 대표 과제, 판정의 한계는 [벤치마크 안내](docs/benchmark.md)에 있습니다.
+실제 모델 호출이 필요한 기능이며, 아래 단위 테스트의 성공은 품질 우위를 입증하지 않습니다.
+
 ## 개발 및 검증
 
 ```sh
@@ -168,7 +184,8 @@ git diff --check
 ```
 
 외부 패키지 없이 임시 Git 저장소와 **가짜 Claude/Codex CLI**로 게이트, 복구, 지식 재사용, 문서 생성,
-설치, 세션 활성화 유지·분리, 위임 범위·수정 적용을 검증합니다. 실제 계정의 모델 호출 품질은 검증하지 않습니다.
+설치, 세션 활성화 유지·분리, 위임 범위·수정 적용, 벤치 비교 실행·회귀 판정을 검증합니다.
+실제 계정의 모델 호출 품질은 검증하지 않습니다.
 시작 전 읽기 전용 분석 위임으로 작업 CLI를, 개발 `plan-review`로 검토 CLI를 확인합니다.
 호스트가 중첩 CLI 실행을 금지하면 제한을 우회하지 않고 시작 전에 해결하거나 장애로 기록합니다. CI는 macOS/Linux × Python 3.10/3.12입니다.
 
@@ -176,4 +193,5 @@ git diff --check
 - [설계와 상태 전이](docs/architecture.md)
 - [개발 계약과 질문 정책](docs/contract.md)
 - [개발 운영·검증·장애 대응](docs/operations.md)
+- [하네스 품질 벤치마크](docs/benchmark.md)
 - [공통 진입 규칙](rules/work.md)

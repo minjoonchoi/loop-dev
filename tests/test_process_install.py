@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import time
@@ -93,6 +94,29 @@ class ProcessTests(ProjectTest):
                          self.root, self.engine.state_dir / "argv", 2)
         self.assertEqual(Path(result["stdout"]).read_text().strip(), literal)
         self.assertFalse((self.root / "should-not-exist").exists())
+
+    def test_benchmark_timeout_also_terminates_nested_process_groups(self):
+        listing = subprocess.run(['ps', '-e', '-o', 'pid=', '-o', 'ppid='], capture_output=True)
+        if listing.returncode:
+            self.skipTest('Host does not expose process inventory; verified on macOS/Linux CI')
+        marker = self.root / 'survived.txt'
+        pidfile = self.root / 'nested.pid'
+        child = "import pathlib,time; time.sleep(2); pathlib.Path('survived.txt').write_text('alive')"
+        parent = ("import pathlib,subprocess,sys,time; "
+                  f"p=subprocess.Popen([sys.executable,'-c',{child!r}],start_new_session=True); "
+                  "pathlib.Path('nested.pid').write_text(str(p.pid)); time.sleep(30)")
+        try:
+            result = execute([sys.executable, '-c', parent], self.root, self.engine.state_dir / 'nested', 0.8, kill_tree=True)
+            self.assertTrue(result['timed_out'])
+            self.assertTrue(pidfile.exists())
+            time.sleep(1.5)
+            self.assertFalse(marker.exists(), 'Nested process survived the benchmark deadline')
+        finally:
+            if pidfile.exists():
+                try:
+                    os.kill(int(pidfile.read_text()), signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
 
     def test_repo_lock_rejects_concurrent_command(self):
         with locked(self.root):

@@ -34,3 +34,8 @@
 The engine validates structure, execution results and freshness. The reviewer judges
 semantic completeness and whether tests genuinely cover the target. Neither can
 prove a bug-free program; reviewers must cite evidence instead of optimistic claims.
+
+Changes to the harness itself also use `benchmark.md`: evaluate delivered outcomes
+against plain execution and a fixed reference. Internal gate/test success alone
+cannot prove that the harness improves users' results. Keep live quality validation
+distinct from unit and simulated transport verification.

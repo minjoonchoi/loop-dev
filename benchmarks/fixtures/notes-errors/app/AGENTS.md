@@ -1,0 +1,1 @@
+Use Python 3.10+ standard library. Work only on this scenario's repositories and local harness/session records. Do not access other benchmark trials, evaluators, network services or publishing tools. Preserve protected source and tests. Technical implementation choices within the request are delegated. Do not ask for IDs or procedural instructions.

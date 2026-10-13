@@ -34,17 +34,17 @@ def reviewer(implementer):
     return "codex" if implementer == "claude" else "claude"
 
 
-def command(provider, root, directory, schema=None, outside_git=False):
+def command(provider, root, directory, schema=None, outside_git=False, model=None):
     executable = shutil.which(provider)
     if not executable:
         raise LoopError(f"Required CLI is not installed: {provider}")
     schema_path = directory / "schema.json"
     if provider == "codex":
         return [executable, "--ask-for-approval", "never", "--sandbox", "read-only",
-                "exec", *(["--skip-git-repo-check"] if outside_git else []), "--ephemeral", "--output-schema", str(schema_path),
+                "exec", *(["--model", model] if model else []), *(["--skip-git-repo-check"] if outside_git else []), "--ephemeral", "--output-schema", str(schema_path),
                 "--output-last-message", str(directory / "answer.json"), "-"]
     if provider == "claude":
-        return [executable, "-p", "--output-format", "json", "--json-schema",
+        return [executable, "-p", *(["--model", model] if model else []), "--output-format", "json", "--json-schema",
                 json.dumps(schema or REVIEW_SCHEMA, separators=(",", ":")),
                 "--permission-mode", "dontAsk", "--tools", "Read,Glob,Grep",
                 "--allowedTools", "Read,Glob,Grep", "--disallowedTools", "AskUserQuestion,mcp__*",
@@ -104,11 +104,11 @@ def validate_review(value, expected_ids, phase):
     return passed
 
 
-def structured_call(provider, root, directory, prompt, timeout, schema, outside_git=False):
+def structured_call(provider, root, directory, prompt, timeout, schema, outside_git=False, model=None):
     directory.mkdir(parents=True, exist_ok=False)
     write_json(directory / "schema.json", schema)
     (directory / "prompt.txt").write_text(prompt, encoding="utf-8")
-    result = execute(command(provider, root, directory, schema, outside_git), root, directory, timeout, prompt=prompt)
+    result = execute(command(provider, root, directory, schema, outside_git, model), root, directory, timeout, prompt=prompt)
     write_json(directory / "process.json", result)
     if result["exit_code"] != 0 or result["timed_out"]:
         raise LoopError(f"{provider} call failed; inspect {directory / 'stderr.log'}")

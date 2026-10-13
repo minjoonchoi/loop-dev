@@ -33,6 +33,7 @@ This is host-agent routing plus persisted state, not a keyword parser or message
 | Readable records and derived views | `writing.py`, `rules/writing.md`; deterministic Markdown, concise authored fields |
 | Provider entry | `skills/loop-dev/`, installed discovery files, managed AGENTS.md/CLAUDE.md blocks |
 | Conversation activation | `harness.py`; explicit on/status/off, shared SQLite session record |
+| Harness outcome benchmarks | `benchmark.py`, `bench_transport.py`, `bench_report.py`; isolated paired runs, external grading, comparison gates |
 | Goal completeness | `contract.py` validates structural traceability and decisions |
 | Context reconstruction | `context.py` derives repository inventory, runtime evidence and next action |
 | Reusable conversation analysis | `session.py` stores topics, decisions, dependency fingerprints and goal history |
@@ -300,6 +301,42 @@ review. The model cannot set the persisted completed state through a review resu
   push/automatic deletion of the working tree.
 - The runtime directory is local and Git-ignored. Cross-machine or clean-clone resume
   requires transferring state intentionally; a goal definition alone is not evidence.
+
+## Harness outcome evaluation
+
+Benchmarking is separate from the harness's own completion gates. `bench plan/run`
+freezes a suite, current candidate and reference Git snapshot; every case/provider/
+repetition runs plain, reference and candidate in seeded random order. Inputs, model
+profiles and budgets match. Trial-local CLI wrappers enforce model IDs and reserve
+a shared call budget for the conversation and its nested workers/reviewers. Existing
+host policy and authentication remain in effect. No SDK or global hook is installed.
+
+Each trial gets fresh repositories, knowledge and an explicitly identified provider
+conversation. Later turns resume that conversation, including directory transitions.
+The first harness turn invokes its installed skill; later turns are ordinary prompts.
+Activation checks reject missing bindings or a contaminated plain control. Installation
+and graders live outside the timed scenario. Timeout cleanup targets the launched
+process group and observed descendants, including nested groups; it is not an OS sandbox.
+
+After execution, an external checker runs on a separate artifact copy. A random-ID
+packet contains only requests, answers, declared fixture source context/changes, deliverables and anchored rubric
+criteria. A fixed read-only judge independently assesses each packet at least twice.
+Disagreements use the lower score. Human assessments use the same packet-bound schema.
+Treatment inference from prose and model judging errors remain possible.
+
+Reports compare each candidate to both controls and retain separate quality, user
+intervention, duration and available usage evidence. Mandatory outcomes, a quality
+floor, paired losses and excess overhead block promotion regardless of average gain.
+Incomplete execution/evidence, failed controls and fake-CLI runs cannot establish an
+improvement. `bench gate` rechecks hashes of artifacts, logs, candidate and suite.
+Bootstrap intervals describe the selected paired observations, not unseen tasks.
+
+`bench proposal` stores a bounded rule hypothesis with affected cases, their scores,
+regressions and frozen source/suite hashes. It does not edit rules automatically.
+The orchestrator implements a scoped change and reruns both controls, calibration
+and holdout cases under unchanged criteria. Public starter holdouts are regression
+examples; broader claims need representative independently held tasks. Unit CI does
+not run paid providers or substitute for this live quality gate. See `rules/benchmark.md`.
 
 ## Explicit limits
 

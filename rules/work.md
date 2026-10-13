@@ -73,6 +73,9 @@ state, expand scope, ask users, delegate further or invoke the entry loop.
 The conversation orchestrates. Follow `delegation.md` to delegate actual analysis,
 planning, implementation and writing with explicit scope, deliverables and criteria.
 Read saved state, select current knowledge and inspect outputs before the next handoff.
+When the task evaluates or changes the harness itself, also follow `benchmark.md`.
+Benchmark-only analysis is research/review; implementing a rule/runtime change is
+development. Do not impose a benchmark on ordinary project work.
 
 ## 1. Goal setting
 

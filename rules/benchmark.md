@@ -1,0 +1,57 @@
+# Evaluate the harness by delivered outcomes
+
+Use this rule when evaluating or changing loop-dev itself. Ordinary application
+work does not need a three-arm experiment. See the source repository's
+`docs/benchmark.md` and `benchmarks/suite.json` for the protocol and starter cases.
+
+## Before execution
+
+- Restore prior benchmark decisions. Fix the candidate, pre-change reference Git
+  commit, suite, concrete model IDs for BOTH providers, judge model, environment,
+  repetitions and call/time budgets. `bench plan` validates these without model calls.
+- Use identical fixtures, requests, profiles and budgets for plain/reference/candidate.
+  Use a dedicated host profile without an automatically activated global harness.
+  Preserve existing permissions, credentials and hooks; do not bypass nested-CLI limits.
+- Keep outcome checks outside the agent workspace. Freeze the rubric, weights,
+  critical criteria and gate thresholds before looking at candidate scores.
+- Include realistic development, small edits, non-development and session reuse.
+  Keep both calibration and holdout cases; public examples alone are not evidence of
+  general superiority. Add representative private cases for release evaluation.
+- Resolve missing user-owned choices before start. Technical setup and intermediate
+  commands belong to the agent. Do not request procedural prompts from the user.
+
+## Evaluate and report
+
+- Run all three arms in fresh workspaces and conversations; resume the same provider
+  session for later turns within a case. Keep knowledge separate between arms.
+- Run external checks, then `bench judge` on blinded packets with fixed anchored
+  criteria and repeated independent assessments. Inspect disagreement and evidence.
+  Scores reward the requested result, never compliance theater, tool count, self-reported
+  completion or long explanations. Short work must not acquire unnecessary loops.
+- Preserve failed attempts. Missing CLI/auth/permissions, interrupted runs, missing
+  ratings, invalid activation, altered evidence and simulations do not count as passes.
+  Never claim superiority because a control could not execute.
+- Inspect each case against plain AND reference. Report quality, extra user requests,
+  elapsed time and known usage separately; unavailable billing remains unknown.
+- Run `bench gate` on the current source and suite before claiming a harness change
+  is benchmark-validated or promoting it under that claim. Nonzero means no promotion.
+  `non_regressing` is not `improved`; qualify every claim by suite/models/repetitions.
+  Unit/fake-CLI success proves implementation behavior, not live model quality.
+
+## Improve rules from evidence
+
+1. Read the failing artifact, criterion and logs. Rule paths in a report identify
+   investigation targets, not proven causes. Separate transport/setup failures from
+   product defects, stale context, omitted work and unnecessary process overhead.
+2. Save one bounded hypothesis with case IDs, affected rule paths and expected
+   observable change using `bench proposal`. Treat it as a hypothesis in knowledge.
+3. Delegate only the identified change with exact scope and completion criteria.
+   Never weaken acceptance, remove failing cases or put case-specific answers in rules.
+4. Rerun unchanged criteria against both controls, including all holdout cases.
+   Repeated tuning against exposed holdouts requires fresh independently held cases
+   before a broader claim. Keep rejected proposals and results as historical evidence.
+5. Accept only with fresh passing evidence and the existing delivery authority.
+   A changed source/suite invalidates the old gate. Do not auto-merge or auto-deploy.
+
+Keep human summaries to verdict, affected cases, evidence and next bounded change.
+Generate tables from structured results; do not write a second narrative execution log.

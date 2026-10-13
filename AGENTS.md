@@ -25,6 +25,10 @@ This repository builds the portable development harness, not a target applicatio
   preservation using `python3 -m unittest discover -s tests -v`.
 - Update usage/architecture docs and examples when the contract or CLI changes.
 - Do not claim live provider integration was tested when only fake CLIs were used.
+- When changing/evaluating harness behavior, use rules/benchmark.md. Keep comparison
+  criteria fixed, compare plain/reference/candidate outcomes, and use bench gate
+  before promoting a change as benchmark-validated. If live CLIs are unavailable,
+  complete implementation checks and explicitly retain the unverified quality status.
 - Do not overwrite existing project instructions, settings, hooks or user changes.
 - No requirement to run this unfinished harness to modify its own implementation.
   Use the user's task and explicit decisions as the current development contract.
