@@ -334,9 +334,14 @@ class DelegationTests(ProjectTest):
         backup = read_json(Path(result["assignment"]["directory"]) / "originals.json")[0]
         self.assertEqual(backup["content"].encode(), b"first\r\nsecond\r\n")
 
+        # macOS temporary roots can be symlink aliases. Simulate that on Linux too
+        # so the injected external edit targets the same real file on both hosts.
+        logical_root = Path(self.temp.name) / "project-alias"
+        logical_root.symlink_to(self.root, target_is_directory=True)
+
         def external_change(path, value):
             write_text(path, value)
-            if path == self.root / "value.py":
+            if path.resolve() == (logical_root / "value.py").resolve():
                 (self.root / "check.py").write_text("outside edit\n")
 
         with patch.dict(os.environ, {"LOOP_WORKER_EDITS": json.dumps({"value.py": "VALUE = 2\n"})}), \
