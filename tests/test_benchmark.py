@@ -373,8 +373,14 @@ class RunnerTests(unittest.TestCase):
 
     def test_checked_in_graders_accept_complete_artifacts(self):
         suite, _, _ = bench.load_suite(SOURCE / 'benchmarks/suite.json')
-        notes = '''import json
+        notes = '''from __future__ import annotations
+import json
 from pathlib import Path
+from dataclasses import dataclass
+from helper import FIRST_ID
+@dataclass
+class Metadata:
+    text: str
 def list_notes(path):
     path = Path(path)
     return json.loads(path.read_text()) if path.exists() else []
@@ -383,7 +389,7 @@ def add(path, text):
         raise ValueError('Invalid text')
     path = Path(path)
     notes = list_notes(path)
-    added = {'id': max((n['id'] for n in notes), default=0) + 1, 'text': text}
+    added = {'id': max((n['id'] for n in notes), default=FIRST_ID - 1) + 1, 'text': text}
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(notes + [added], ensure_ascii=False))
     return added
@@ -394,6 +400,7 @@ def add(path, text):
                 shutil.copytree(SOURCE / 'benchmarks' / case['fixture'], workspace)
                 if case['id'].startswith('notes-'):
                     (workspace / 'app/notes.py').write_text(notes)
+                    (workspace / 'app/helper.py').write_text('FIRST_ID = 1\n')
                 elif case['id'] == 'small-change':
                     (workspace / 'app/convert.py').write_text('def seconds(minutes):\n    return minutes * 60\n')
                 elif case['id'] == 'source-explanation':
@@ -401,6 +408,7 @@ def add(path, text):
                         'compares_source_hash': True, 'explanation': '현재 소스 해시가 같고 180초 미만이면 재사용합니다.',
                         'limitation': '디스크의 외부 변경을 자동으로 감시하지 않습니다.'})
                 elif case['id'] == 'readme-contract':
+                    write_json(workspace / 'app/demo.json', ['previous verification data'])
                     (workspace / 'app/README.md').write_text('Python 3을 사용합니다.\n```sh\npython3 notes.py add --text 안녕 --file demo.json\npython3 notes.py list --file demo.json\n```\n')
                     write_json(workspace / 'app/usage.json', {'commands': [
                         {'argv': ['python3', 'notes.py', 'add', '--text', '안녕', '--file', 'demo.json'], 'expected': ['안녕']},

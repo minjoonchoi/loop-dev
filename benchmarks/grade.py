@@ -20,8 +20,12 @@ def criterion(key, test):
 
 
 def module(name):
+    # Load application-local helpers exactly as a normal invocation from app/ does.
+    # Register the module for annotation/dataclass resolution during execution.
+    sys.path.insert(0, str(root / 'app'))
     spec = importlib.util.spec_from_file_location('subject', root / 'app' / name)
     value = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = value
     spec.loader.exec_module(value)
     return value
 
@@ -102,6 +106,9 @@ def commands():
     readme = (root / 'app/README.md').read_text().replace('\\\n', ' ')
     documented = [shlex.split(line.strip()) for line in readme.splitlines() if line.strip().startswith('python3 ')]
     assert len(commands) >= 2
+    # The fixture starts without demo data. Agent verification may have created it;
+    # reset only this grader's copy before replaying the documented sequence.
+    (root / 'app/demo.json').unlink(missing_ok=True)
     for index, command in enumerate(commands):
         argv = command['argv']
         assert isinstance(argv, list) and all(isinstance(x, str) for x in argv)
