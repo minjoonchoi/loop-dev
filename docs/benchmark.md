@@ -12,7 +12,7 @@
 | `reference` | 지정한 Git 커밋의 하네스 설치·스킬 시작 | 기존 하네스보다 나빠졌는가? |
 | `candidate` | 현재 작업 트리의 하네스 설치·스킬 시작 | 변경으로 실제 결과가 좋아졌는가? |
 
-세 대상은 같은 초기 파일·요청·공급자별 모델·호출 한도·시간 한도를 사용합니다.
+세 대상은 같은 초기 파일·요청·공급자별 모델·effort·호출 한도·시간 한도를 사용합니다.
 각 실행은 새 Git 저장소, 공급자 대화, 지식베이스를 갖습니다. 한 과제의 후속 입력은
 같은 실제 Claude/Codex 대화를 재개합니다. 폴더가 바뀌어도 세션은 유지합니다.
 과제·반복·대상 순서를 고정 시드로 섞어 실행 순서 영향을 줄입니다.
@@ -55,25 +55,77 @@
 벤치는 상시 실행 훅이 아닙니다. 하네스 변경 검증이나 명시적인 평가 요청에 사용합니다.
 
 다음은 에이전트가 실행하는 내부 명령 예시입니다. 모델 변수는 해당 계정에서 사용 가능한
-구체적인 모델 ID, 기준 변수는 변경 전 검증 대상 커밋 SHA로 설정합니다. 결과 디렉터리는
-소스·과제 디렉터리 밖의 새 경로여야 합니다. `plan`은 모델을 호출하지 않습니다.
+구체적인 모델 ID, effort 변수는 그 모델과 CLI가 지원하는 명시적 수준, 기준 변수는 변경 전
+검증 대상 커밋 SHA로 설정합니다. 결과 디렉터리는 소스·과제 디렉터리 밖의 새 경로여야 합니다.
+
+### 한 번에 실행
+
+```sh
+python3 scripts/benchmark.py \
+  --claude-model "$BENCH_CLAUDE_MODEL" --claude-effort "$BENCH_CLAUDE_EFFORT" \
+  --codex-model "$BENCH_CODEX_MODEL" --codex-effort "$BENCH_CODEX_EFFORT" \
+  --reference-ref "$BENCH_REFERENCE_SHA" \
+  --output "$BENCH_RUN_DIR"
+```
+
+`python3 scripts/loop.py bench check`도 같은 명령입니다. 비교 실행 → 외부 검사 → 독립 평가 →
+현재 소스 게이트 → 개선 리포트를 순서대로 수행합니다. 실행 직후의 미채점 상태 때문에
+다음 단계가 생략되지 않습니다. 모델·effort 네 인수가 필수이고 나머지 기본값은 다음과 같습니다.
+
+| 설정 | 기본값 / 변경 방법 |
+| --- | --- |
+| 목표 유형 | 개발·문서·설명, 과제 6개; `--suite`로 변경 |
+| 실행 제공자 | Claude와 Codex 모두; `--provider`로 선택 |
+| 후보 / 기준 | 스크립트가 속한 소스 체크아웃 / `HEAD`; `--candidate`, `--reference-ref` |
+| 반복 / 순서 | 3회 / 시드 0; `--repeats`, `--seed` |
+| 공통 평가자 | 지정한 Codex 모델·effort, 독립 평가 2회 |
+| 평가자 변경 | `--judge-provider`, `--judge-model`, `--judge-effort`, `--judge-repeats` |
+| 결과 경로 | 소스 옆 `loop-dev-benchmarks/<시각>-<실행 ID>/`; `--output` |
+| 환경 기록 | 현재 OS·아키텍처와 CLI 프로필 해시; `--environment`로 설명 지정 |
+
+`HEAD`가 현재 변경과 같으면 reference와 candidate도 같으므로, 규칙 변경 비교에는 변경 전
+커밋을 명시합니다. 실행 전에 `--dry-run`으로 목표 유형, 설정, 평가자와 호출/시간 상한을
+확인할 수 있습니다. 이 옵션은 모델 호출이나 결과 디렉터리 생성을 하지 않습니다.
+
+평가자 제공자·모델·effort·반복 수는 실행 manifest에 먼저 고정합니다. 모든 실행 제공자와
+비교군을 같은 평가자로 채점하며, 점수를 본 뒤 설정을 바꿀 수 없습니다. 평가 실패나
+게이트 오류도 `check.json`과 개선 리포트에 남기고 `inconclusive`(코드 3)로 끝냅니다.
+입력 자체가 잘못되었으면 실행 전에 코드 2로 거절합니다.
+
+### 설정의 적용 범위
+
+공급자별 모델·effort를 루트 대화와 중첩 작업·교차 검토에 모두 적용합니다. 서로 다른 설정을
+요청한 중첩 호출은 거절하며, 지원하지 않는 수준은 CLI 오류로 남기고 다른 수준으로 대체하지
+않습니다. `auto`/`default`는 허용하지 않습니다. 전역 설정 파일은 수정하지 않습니다.
+
+Codex에는 `model_reasoning_effort`와 `plan_mode_reasoning_effort`를 같은 값으로 넘깁니다.
+Claude에는 `--effort`와 해당 호출의 `CLAUDE_CODE_EFFORT_LEVEL`을 같은 값으로 넘깁니다.
+지원 수준은 모델과 클라이언트에 따라 다릅니다. [Codex 설정 참조](https://developers.openai.com/codex/config-reference/)와
+[Claude CLI 참조](https://code.claude.com/docs/en/cli-reference)를 확인하세요.
+기록한 설정은 요청값이며, 같은 이름의 effort가 공급자 사이에서 같은 연산량·비용을 뜻하지는 않습니다.
+
+### 단계별 실행
+
+수동 분석이 필요할 때 사용하는 하위 명령입니다. `plan`은 모델을 호출하지 않습니다.
 
 ```sh
 python3 scripts/loop.py bench plan \
   --suite benchmarks/suite.json --candidate . --reference-ref "$BENCH_REFERENCE_SHA" \
   --codex-model "$BENCH_CODEX_MODEL" --claude-model "$BENCH_CLAUDE_MODEL" \
+  --codex-effort "$BENCH_CODEX_EFFORT" --claude-effort "$BENCH_CLAUDE_EFFORT" \
   --provider codex --provider claude --repeats 3 --seed 17 \
   --environment "dedicated benchmark profile; fixed host and provider settings"
 
 python3 scripts/loop.py bench run \
   --suite benchmarks/suite.json --candidate . --reference-ref "$BENCH_REFERENCE_SHA" \
   --codex-model "$BENCH_CODEX_MODEL" --claude-model "$BENCH_CLAUDE_MODEL" \
+  --codex-effort "$BENCH_CODEX_EFFORT" --claude-effort "$BENCH_CLAUDE_EFFORT" \
   --provider codex --provider claude --repeats 3 --seed 17 \
   --environment "dedicated benchmark profile; fixed host and provider settings" \
   --output "$BENCH_RUN_DIR"
 
 python3 scripts/loop.py bench judge "$BENCH_RUN_DIR" \
-  --provider codex --model "$BENCH_JUDGE_MODEL" --repeats 2
+  --provider codex --model "$BENCH_JUDGE_MODEL" --effort "$BENCH_JUDGE_EFFORT" --repeats 2
 
 python3 scripts/loop.py bench gate "$BENCH_RUN_DIR" \
   --candidate . --suite benchmarks/suite.json
@@ -87,7 +139,7 @@ python3 scripts/loop.py bench gate "$BENCH_RUN_DIR" \
 
 실행 중에는 stderr와 `index.json`에서 완료 수를 확인합니다. `run` 직후에는 결과물
 평가가 없으므로 보통 코드 3을 반환합니다. 이것은 `judge` 전의 정상적인 근거 부족 상태입니다.
-셸의 `&&`로 `run`과 `judge`를 연결하면 평가가 생략될 수 있으므로 각각 실행합니다.
+셸의 `&&`로 `run`과 `judge`를 연결하면 평가가 생략될 수 있으므로 전체 실행에는 `bench check`를 사용합니다.
 실패·부분 실행의 로그를 보존하며, 재실행은 새 디렉터리에 모든 대상을 실행합니다.
 
 두 CLI에 기존 인증이 필요합니다. 하네스의 교차 검토까지 비교하므로 `--provider`를
@@ -98,13 +150,23 @@ python3 scripts/loop.py bench gate "$BENCH_RUN_DIR" \
 
 | 경로 | 용도 |
 | --- | --- |
+| `check.json` | 전체 실행의 단계·최종 판정·오류·선택 설정 |
+| `improvements.md` | 설정별 비교, 유형별 완료/판정, 우선순위 상위 5개 개선 항목 |
+| `improvements.json` | 전체 유형별 측정값, 묶인 개선 항목, 관측·가설·관련 규칙·다음 변경·재검증 |
 | `report.md` | 판정, 과제별 차이, 근거 부족, 조사할 규칙 |
 | `report.json` | 평가 항목별 점수·근거·불일치·개입·시간·사용량 |
-| `manifest.json`, `index.json` | 모델/CLI 버전·환경·소스/과제 해시·실행 완전성 |
+| `manifest.json`, `index.json` | 모델/effort·평가자/CLI 버전·환경·소스/과제 해시·실행 완전성 |
 | `trials/<id>/packet.json` | 대상·모델·하네스 상태를 제외한 평가 입력 |
 | `trials/<id>/` | 작업 결과, 요청/응답, 프로세스·검사·호출 로그 |
 | `judgments.json`, `judges/` | 동일 평가 모델의 반복 평가와 원본 로그 |
 | `proposals/` | 관찰된 결과와 연결한 규칙 변경 가설 |
+
+개선 리포트는 측정 데이터에서 생성하므로 추가 모델 호출이 없습니다. 같은 사례·제공자·평가
+항목의 반복 실패를 하나로 묶고, 실행/근거 문제(P0), 품질/추가 질문(P1), 시간/평가 불일치(P2)
+순으로 표시합니다. **관측된 문제와 원인 가설을 분리**하며 조사할 규칙 경로를 확정 원인으로
+표현하지 않습니다. 회귀가 없으면 불필요한 규칙 변경을 만들어내지 않습니다.
+미측정 품질·시간·사용량은 0으로 채우지 않습니다. 전체 평균과 별개로 유형별 결과와 개별
+사례의 회귀를 확인합니다. 전체 실행이 중단되면 기존 중간 report가 있어도 통과 근거로 사용하지 않습니다.
 
 1. 실패한 과제와 평가 항목의 **실제 결과물·근거**를 읽습니다. 관련 규칙 경로는 원인
    후보이며, 인과관계를 증명한 것은 아닙니다.
@@ -124,6 +186,12 @@ python3 scripts/loop.py bench gate "$BENCH_RUN_DIR" \
 
 ## 과제와 평가 확장
 
+**서로 다른 목표 유형이 최소 2개** 있어야 실행됩니다. 개발 사례 여러 개만으로는 충분하지
+않습니다. 기본 구성은 `development`, `document`, `explanation`이며 `research`, `review`,
+`planning`도 지원합니다. 기존 `session` 사례는 설명 목표의 세션 재사용 시나리오이므로
+`explanation`에 합산합니다. 세션을 바꾸거나 같은 목표를 반복한 것을 새 목표 유형으로 세지 않습니다.
+유효한 결과를 위해 모든 유형을 선택한 제공자·세 비교군·반복에서 완료하고 채점해야 합니다.
+
 기본 과제는 저장/재조회, 입력 오류와 데이터 보존, 소스 설명, 실행 가능한 문서 예제,
 작은 수정, 폴더 이동과 지식 최신화를 다룹니다. `calibration`은 원인 분석에,
 `holdout`은 변경의 다른 영향 확인에 씁니다. 둘 다 공개된 예제이므로 진정한 비공개
@@ -142,9 +210,11 @@ python3 scripts/loop.py bench gate "$BENCH_RUN_DIR" \
 평가자는 `packet.json`의 요청·응답·선언 소스·전체 선언 결과물만 받습니다. 각 `rubric`에는
 0~4점의 구체적인 기준 다섯 개가 필요합니다. 함수 정확성만 자동 검사하는 과제도
 추가 사용자 요구의 유무는 평가합니다. 사람의 평가 JSON도 `report/gate --judgments FILE`로
-입력할 수 있습니다. 실행의 `manifest_hash`, 고정 평가자 `{provider, model}` 식별자,
+입력할 수 있습니다. 별도 `bench run`으로 시작한 실행에는 `manifest_hash`, 고정 평가자 `{provider, model}` 식별자,
 `repeats` 2~5, 표본별 `packet_hash`와 `reviews`가 필요합니다. 각 review는
 `ratings: [{id, score, evidence}]`, `extra_user_requests`, `intervention_evidence`를 갖습니다.
+`bench check`로 평가자를 고정한 실행은 `{provider, model, effort}`와 반복 수가 manifest와
+정확히 일치해야 합니다. 사람이나 다른 모델의 사후 평가로 바꾸려면 별도 실험으로 기록합니다.
 
 평가 코드는 에이전트에게 전달하지 않고 종료 후 별도 복사본에서 실행합니다. 다만 이는
 **협력적인 로컬 평가**이며, 악의적인 코드에 대한 OS 격리나 완벽한 익명화는 아닙니다.

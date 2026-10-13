@@ -141,7 +141,7 @@ flowchart TD
 | 지식 재사용·갱신 | `knowledge context`, `knowledge remember`, `knowledge get`, `knowledge history` |
 | 프로젝트 연결 | `knowledge projects`, `knowledge attach` |
 | 개발 | `init`, `delegate`, `validate`, `doctor`, `plan-review`, `freeze`, `start`, `checkpoint`, `finish` |
-| 하네스 자체 평가 | `bench plan`, `bench run`, `bench judge`, `bench report`, `bench gate`, `bench proposal` |
+| 하네스 자체 평가 | `bench check`(전체 실행), `bench plan`, `bench run`, `bench judge`, `bench report`, `bench gate`, `bench proposal` |
 | 맥락·복구 | `context`, `status`, `note`, `block`, `resume`, `abort`, `session`; 공통 작업은 `work` 하위 명령 |
 
 | 위치 | 내용 |
@@ -164,7 +164,7 @@ flowchart TD
 ## 하네스가 실제로 더 나은지 평가
 
 벤치는 같은 요청을 **하네스 없음 / 기존 커밋 / 현재 변경**으로 반복 실행합니다.
-같은 모델·초기 파일·예산을 사용하고, 대화·지식베이스·작업 공간을 각각 분리합니다.
+같은 모델·effort·초기 파일·예산을 사용하고, 대화·지식베이스·작업 공간을 각각 분리합니다.
 기능은 외부 검사로, 문서·설명은 익명 결과물의 기준별 평가로 확인합니다.
 완료 선언이나 작업량 자체에는 점수를 주지 않습니다.
 
@@ -172,6 +172,21 @@ flowchart TD
 **개선 / 회귀 없음 / 회귀 / 근거 부족**을 구분하고, 실패 근거와 관련 규칙을 연결해
 변경 가설을 저장합니다. 규칙 변경 후 같은 기준으로 재측정하며, 코드나 평가 기준이
 바뀌면 이전 통과 결과가 만료됩니다.
+
+Claude와 Codex의 모델·effort를 각각 지정하면 한 명령으로 비교 실행·결과물 채점·게이트·
+개선 리포트까지 생성합니다. **서로 다른 목표 유형을 2개 이상** 평가해야 하며, 기본은
+개발·문서·설명입니다. 같은 유형의 사례만 여러 개 넣으면 실행 전에 거절합니다.
+
+```sh
+python3 scripts/benchmark.py \
+  --claude-model "$BENCH_CLAUDE_MODEL" --claude-effort "$BENCH_CLAUDE_EFFORT" \
+  --codex-model "$BENCH_CODEX_MODEL" --codex-effort "$BENCH_CODEX_EFFORT" \
+  --reference-ref "$BENCH_REFERENCE_SHA"
+```
+
+`--dry-run`은 실행 조건과 예산만 확인합니다. `improvements.md`에는 유형별 판정과
+우선 개선할 항목을, `improvements.json`에는 측정 근거·원인 가설·변경 범위·재검증 조건을
+저장합니다. 모델 비교는 같은 공통 평가자로 채점합니다.
 
 벤치 요청과 실행 방법, 대표 과제, 판정의 한계는 [벤치마크 안내](docs/benchmark.md)에 있습니다.
 실제 모델 호출이 필요한 기능이며, 아래 단위 테스트의 성공은 품질 우위를 입증하지 않습니다.

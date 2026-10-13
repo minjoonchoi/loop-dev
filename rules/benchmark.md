@@ -7,14 +7,19 @@ work does not need a three-arm experiment. See the source repository's
 ## Before execution
 
 - Restore prior benchmark decisions. Fix the candidate, pre-change reference Git
-  commit, suite, concrete model IDs for BOTH providers, judge model, environment,
-  repetitions and call/time budgets. `bench plan` validates these without model calls.
+  commit, suite, concrete model IDs and explicit efforts for BOTH providers, judge
+  provider/model/effort, environment, repetitions and call/time budgets. Use
+  `scripts/benchmark.py` (`bench check`) for run → judge → gate → improvement report;
+  `--dry-run` validates the full configuration without model calls.
 - Use identical fixtures, requests, profiles and budgets for plain/reference/candidate.
   Use a dedicated host profile without an automatically activated global harness.
   Preserve existing permissions, credentials and hooks; do not bypass nested-CLI limits.
 - Keep outcome checks outside the agent workspace. Freeze the rubric, weights,
   critical criteria and gate thresholds before looking at candidate scores.
 - Include realistic development, small edits, non-development and session reuse.
+  Evaluate at least two distinct goal types; multiple cases of one type do not qualify.
+  Session reuse is a scenario dimension, not another goal type. The starter suite
+  covers development, document and explanation; its session case counts as explanation.
   Keep both calibration and holdout cases; public examples alone are not evidence of
   general superiority. Add representative private cases for release evaluation.
 - Resolve missing user-owned choices before start. Technical setup and intermediate
@@ -33,6 +38,8 @@ work does not need a three-arm experiment. See the source repository's
   Never claim superiority because a control could not execute.
 - Inspect each case against plain AND reference. Report quality, extra user requests,
   elapsed time and known usage separately; unavailable billing remains unknown.
+  Retain results per goal type and provider/model/effort. Every selected type must
+  execute across all arms and repetitions. An aggregate gain cannot hide a type's loss.
 - Run `bench gate` on the current source and suite before claiming a harness change
   is benchmark-validated or promoting it under that claim. Nonzero means no promotion.
   `non_regressing` is not `improved`; qualify every claim by suite/models/repetitions.
@@ -43,6 +50,9 @@ work does not need a three-arm experiment. See the source repository's
 1. Read the failing artifact, criterion and logs. Rule paths in a report identify
    investigation targets, not proven causes. Separate transport/setup failures from
    product defects, stale context, omitted work and unnecessary process overhead.
+   Start with `improvements.md`; its JSON keeps all grouped findings. Each item must
+   distinguish measured observations from hypotheses and specify a bounded next change
+   and revalidation. Resolve missing evidence before attributing problems to rules.
 2. Save one bounded hypothesis with case IDs, affected rule paths and expected
    observable change using `bench proposal`. Treat it as a hypothesis in knowledge.
 3. Delegate only the identified change with exact scope and completion criteria.

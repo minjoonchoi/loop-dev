@@ -20,7 +20,7 @@ from .storage import LoopError, digest, file_hash, inside, now, read_json, write
 
 ARMS = ('plain', 'reference', 'candidate')
 KINDS = ('development', 'document', 'explanation', 'research', 'review', 'planning', 'session')
-SOURCE_PATHS = ('scripts/loop.py', 'scripts/install.py', 'loop_dev/', 'rules/', 'templates/', 'skills/loop-dev/')
+SOURCE_PATHS = ('scripts/loop.py', 'scripts/install.py', 'scripts/benchmark.py', 'loop_dev/', 'rules/', 'templates/', 'skills/loop-dev/')
 
 
 def integer(value, low, high, label):
@@ -132,7 +132,29 @@ def load_suite(path):
         seals[case['id']] = {'fixture': file_map, 'grader': file_hash(grader)}
     if len(set(ids)) != len(ids) or {c['split'] for c in value['cases']} != {'calibration', 'holdout'}:
         raise LoopError('Suite needs distinct case IDs and both calibration and holdout cases')
+    goal_types(value)
     return value, digest([value, seals]), seals
+
+
+def goal_type(case):
+    # Session reuse is a scenario dimension, not a separate user goal type.
+    return case['kind'] if case['kind'] != 'session' else 'explanation'
+
+
+def goal_types(suite):
+    kinds = sorted({goal_type(c) for c in suite['cases']})
+    if len(kinds) < 2:
+        raise LoopError('Benchmark requires at least two distinct goal types; extra cases of one type do not qualify')
+    return kinds
+
+
+def validate_evaluation(value):
+    if (not isinstance(value, dict) or set(value) != {'provider', 'model', 'effort', 'repeats'}
+            or value['provider'] not in ('claude', 'codex')
+            or not isinstance(value['model'], str) or not value['model'].strip() or value['effort'] is None):
+        raise LoopError('Pin the independent judge provider, model, effort and repetitions')
+    bench_transport.effort_args(value['provider'], value['effort'])
+    integer(value['repeats'], 2, 5, 'judge repetitions')
 
 
 def source_snapshot(root, ref=None):
@@ -173,10 +195,13 @@ def profile_fingerprint():
     return {str(p): file_hash(p) for p in paths}
 
 
-def prepare(suite_path, candidate, reference_ref, models, providers, repeats, seed, environment):
+def prepare(suite_path, candidate, reference_ref, models, providers, repeats, seed, environment, efforts=None, evaluation=None):
     suite, seal, assets = load_suite(suite_path)
     integer(repeats, 1, 100, 'repeats')
     integer(seed, 0, 2**31 - 1, 'seed')
+    bench_transport.validate_efforts(efforts)
+    if evaluation is not None:
+        validate_evaluation(evaluation)
     if set(models) != {'codex', 'claude'} or not all(isinstance(x, str) and x.strip() for x in models.values()):
         raise LoopError('Pin both Claude and Codex model IDs, including nested workers/reviewers')
     if not providers or any(p not in models for p in providers) or len(set(providers)) != len(providers):
@@ -188,12 +213,13 @@ def prepare(suite_path, candidate, reference_ref, models, providers, repeats, se
     planned_trials = len(suite['cases']) * len(providers) * repeats * len(ARMS)
     return {'version': 1, 'suite': suite, 'suite_hash': seal, 'assets': assets,
             'source': {'candidate': current, 'reference': reference},
-            'models': models, 'providers': providers, 'repeats': repeats, 'seed': seed,
+            'models': models, 'efforts': efforts, 'evaluation': evaluation, 'goal_types': goal_types(suite),
+            'providers': providers, 'repeats': repeats, 'seed': seed,
             'environment': environment, 'profile': profile_fingerprint(),
             'planned_trials': planned_trials,
             'limits': {'conversation_cli_calls': planned_trials * suite['max_calls'],
                        'scenario_wall_seconds': planned_trials * suite['timeout_seconds'],
-                       'default_judge_calls': planned_trials * 2}}
+                       'default_judge_calls': planned_trials * (evaluation['repeats'] if evaluation else 2)}}
 
 
 def export_files(root, contents):
@@ -253,7 +279,7 @@ def run_trial(root, spec, case, provider, repeat, arm, sources, suite_home, exec
     for name in case['roots']:
         commit_fixture(workspace / name)
     before = frozen_files(workspace, case)
-    env = bench_transport.prepare_transport(trial, spec['models'], spec['suite']['max_calls'], executables)
+    env = bench_transport.prepare_transport(trial, spec['models'], spec['suite']['max_calls'], executables, spec['efforts'])
     if arm != 'plain':
         setup = execute([sys.executable, str(sources[arm] / 'scripts/install.py'), '--target',
                          str(workspace / case['turns'][0]['root'])], workspace, trial / 'install', 30, env_overrides=env)
@@ -333,8 +359,9 @@ def run_trial(root, spec, case, provider, repeat, arm, sources, suite_home, exec
     return record
 
 
-def run(suite_path, candidate, reference_ref, models, providers, repeats, seed, environment, output, executables=None):
-    spec = prepare(suite_path, candidate, reference_ref, models, providers, repeats, seed, environment)
+def run(suite_path, candidate, reference_ref, models, providers, repeats, seed, environment, output, executables=None,
+        efforts=None, evaluation=None):
+    spec = prepare(suite_path, candidate, reference_ref, models, providers, repeats, seed, environment, efforts, evaluation)
     output = Path(output).resolve()
     if output.exists() or output.is_relative_to(Path(candidate).resolve()) or output.is_relative_to(Path(suite_path).resolve().parent):
         raise LoopError('Use a new benchmark output directory outside source/suite trees')

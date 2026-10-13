@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from loop_dev import benchmark as bench, bench_report as reports, bench_transport as transport
+from loop_dev import benchmark as bench, bench_report as reports, bench_transport as transport, bench_check
 from loop_dev.storage import LoopError, digest, file_hash, read_json, write_json
 
 SOURCE = Path(__file__).resolve().parents[1]
@@ -34,7 +34,7 @@ def make_suite(base, rubrics=True):
         if key == 'tiny-b':
             turns.append({'root': 'beta', 'prompt': 'Now write output.json in this directory from the updated source.json.',
                           'before': {'beta/source.json': '{"value":43}\n'}})
-        cases.append({'id': key, 'kind': 'session' if len(roots) > 1 else 'explanation', 'split': split,
+        cases.append({'id': key, 'kind': 'session' if len(roots) > 1 else 'development', 'split': split,
                       'fixture': 'fixtures/' + key, 'roots': roots, 'turns': turns, 'artifacts': [r + '/output.json' for r in roots],
                       'protected': [], 'grader': 'grade.py', 'criteria': criteria})
     (base / 'grade.py').write_text('''import json, sys\nfrom pathlib import Path\np = Path(sys.argv[1])\npaths = list(p.glob("*/source.json"))\npassed = all((x.parent / "output.json").is_file() and json.loads((x.parent / "output.json").read_text()) == json.loads(x.read_text()) for x in paths)\nprint(json.dumps({"correct":{"passed":passed,"evidence":"Compared source values with delivered output objects."}}))\n''')
@@ -57,6 +57,7 @@ class ReportTests(unittest.TestCase):
         bench.export_files(self.root / 'sources/candidate', source['files'])
         self.spec = {'version': 1, 'suite': suite, 'suite_hash': seal, 'providers': ['codex'],
                      'models': {'claude': 'fixed-claude', 'codex': 'fixed-codex'}, 'repeats': 3, 'seed': 0,
+                     'efforts': {'claude': 'high', 'codex': 'medium'},
                      'source': {'candidate': {'hash': source['hash'], 'ref': None}, 'reference': {'hash': 'reference', 'ref': 'fixed'}},
                      'mode': 'live', 'planned_trials': 18}
         self.index = {'manifest_hash': digest(self.spec), 'complete': True, 'trials': []}
@@ -124,6 +125,19 @@ class ReportTests(unittest.TestCase):
         self.assertGreater(value['effects']['plain']['mean'], 0)
         self.assertEqual(value['verdict'], 'regression')
         self.assertTrue(any(f.get('control') == 'reference' and f['case'] == 'tiny-b' for f in value['regressions']))
+        improvement = read_json(self.root / 'improvements.json')
+        self.assertEqual(improvement['goal_types'], ['development', 'explanation'])
+        types = {r['goal_type']: r for r in improvement['type_outcomes']}
+        self.assertEqual(types['development']['status'], 'non_regressing')
+        self.assertEqual(types['explanation']['status'], 'regression')
+        grouped = [i for i in improvement['improvements'] if i['title'] == 'tiny-b / codex / usable']
+        self.assertEqual(len(grouped), 1)
+        self.assertEqual(len(grouped[0]['sample_ids']), 3)
+        self.assertTrue(grouped[0]['hypothesis'])
+        self.assertTrue(grouped[0]['next_change'])
+        self.assertTrue(grouped[0]['revalidation'])
+        self.assertIn('rules/quality.md', grouped[0]['rule_paths'])
+        self.assertTrue(all((self.root / p).is_file() for p in grouped[0]['evidence']))
 
     def test_critical_failure_user_requests_and_cost_are_separate_gates(self):
         row = next(r for r in self.rows if r['arm'] == 'candidate')
@@ -162,6 +176,21 @@ class ReportTests(unittest.TestCase):
         self.save()
         self.assertFalse(reports.report(self.root)['passed'])
 
+    def test_legacy_single_type_or_unfinished_type_cannot_pass(self):
+        self.spec['suite']['cases'][0]['kind'] = 'explanation'
+        self.index['manifest_hash'] = self.ratings['manifest_hash'] = digest(self.spec)
+        self.save()
+        value = reports.report(self.root)
+        self.assertEqual(value['verdict'], 'inconclusive')
+        self.assertTrue(any('two distinct goal types' in m for m in value['missing']))
+        self.spec['suite']['cases'][0]['kind'] = 'development'
+        self.index['manifest_hash'] = self.ratings['manifest_hash'] = digest(self.spec)
+        self.index['complete'] = False
+        self.save()
+        reports.report(self.root)
+        value = read_json(self.root / 'improvements.json')
+        self.assertTrue(all(t['status'] == 'inconclusive' for t in value['type_outcomes']))
+
     def test_unfinished_provider_calls_and_invalid_controls_are_missing_evidence(self):
         row = next(r for r in self.rows if r['arm'] == 'plain')
         row['usage']['calls_complete'] = False
@@ -176,16 +205,56 @@ class ReportTests(unittest.TestCase):
 
     def test_judge_uses_fixed_model_repeated_packet_bound_assessments(self):
         seen = []
-        def call(provider, root, directory, prompt, timeout, schema, outside_git, model):
+        def call(provider, root, directory, prompt, timeout, schema, outside_git, model, effort):
             packet = json.loads(prompt.split('ARTIFACT DATA:\n')[1])
-            seen.append((provider, model, outside_git))
+            seen.append((provider, model, outside_git, effort))
             return copy.deepcopy(self.ratings['samples'][packet['sample']]['reviews'][0])
         with patch('loop_dev.bench_report.providers.structured_call', side_effect=call):
-            value = reports.judge(self.root, 'claude', 'fixed-judge', 2)
+            value = reports.judge(self.root, 'claude', 'fixed-judge', 2, effort='high')
         self.assertEqual(len(seen), 36)
-        self.assertEqual(set(seen), {('claude', 'fixed-judge', True)})
+        self.assertEqual(set(seen), {('claude', 'fixed-judge', True, 'high')})
         self.assertTrue(value['passed'])
-        self.assertEqual(value['reviewer'], {'provider': 'claude', 'model': 'fixed-judge'})
+        self.assertEqual(value['reviewer'], {'provider': 'claude', 'model': 'fixed-judge', 'effort': 'high'})
+
+    def test_frozen_judge_settings_reject_changed_effort_before_calls(self):
+        self.spec['evaluation'] = {'provider': 'claude', 'model': 'fixed-judge', 'effort': 'high', 'repeats': 2}
+        self.index['manifest_hash'] = self.ratings['manifest_hash'] = digest(self.spec)
+        self.save()
+        with patch('loop_dev.bench_report.providers.structured_call') as call, self.assertRaisesRegex(LoopError, 'frozen'):
+            reports.judge(self.root, 'claude', 'fixed-judge', 2, effort='low')
+        call.assert_not_called()
+        with self.assertRaisesRegex(LoopError, 'frozen evaluation'):
+            reports.report(self.root)
+
+    def test_improvements_preserve_missing_values_and_do_not_invent_rule_changes(self):
+        reports.report(self.root)
+        value = read_json(self.root / 'improvements.json')
+        self.assertEqual(value['improvements'], [])
+        self.assertEqual(len(value['comparisons']), 9)
+        (self.root / 'judgments.json').unlink()
+        reports.report(self.root)
+        value = read_json(self.root / 'improvements.json')
+        self.assertTrue(all(g['quality_mean'] is None and g['rated'] == 0 for g in value['comparisons']))
+        self.assertEqual(value['improvements'][0]['priority'], 'P0')
+        self.assertEqual(value['improvements'][0]['rule_paths'], [])
+
+    def test_workflow_failure_cannot_publish_a_historical_pass(self):
+        for phase in ('judge', 'gate'):
+            output = self.base / ('failed-' + phase)
+            def run(*args, **kwargs):
+                shutil.copytree(self.root, output)
+            with patch('loop_dev.bench_check.benchmark.run', side_effect=run), \
+                 patch('loop_dev.bench_check.bench_report.judge', side_effect=LoopError('judge unavailable') if phase == 'judge' else None), \
+                 patch('loop_dev.bench_check.bench_report.gate', side_effect=LoopError('Candidate changed')):
+                result = bench_check.check(self.spec['models'], self.spec['efforts'], candidate=SOURCE,
+                    suite=self.suite_path, output=output)
+            self.assertEqual(result['verdict'], 'inconclusive')
+            self.assertEqual(result['failure']['phase'], phase)
+            self.assertFalse(result['passed'])
+            improvement = read_json(output / 'improvements.json')
+            self.assertFalse(improvement['passed'])
+            self.assertTrue(all(t['status'] == 'inconclusive' for t in improvement['type_outcomes']))
+            self.assertEqual(read_json(output / 'check.json')['phase'], phase)
 
     def test_judge_disagreement_is_conservative_and_malformed_ratings_rejected(self):
         sample = next(r['id'] for r in self.rows if r['arm'] == 'candidate')
@@ -251,7 +320,26 @@ if provider == 'codex' and 'resume' in sys.argv:
     assert sys.argv.index('--json') < sys.argv.index('resume')
     assert sys.argv.index('--output-last-message') < sys.argv.index('resume')
 prompt = sys.stdin.read()
+if 'ARTIFACT DATA:\n' in prompt:
+    packet = json.loads(prompt.split('ARTIFACT DATA:\n')[1])
+    answer = {'ratings': [{'id': c['id'], 'score': 4, 'evidence': 'The output object matches the supplied source.'} for c in packet['criteria']],
+              'extra_user_requests': 0, 'intervention_evidence': 'No additional questions in the transcript.'}
+    if provider == 'codex':
+        pathlib.Path(sys.argv[sys.argv.index('--output-last-message') + 1]).write_text(json.dumps(answer))
+    else:
+        assert os.environ['CLAUDE_CODE_EFFORT_LEVEL'] == sys.argv[sys.argv.index('--effort') + 1]
+        print(json.dumps({'structured_output': answer, 'is_error': False}))
+    raise SystemExit(0)
 trial = pathlib.Path(os.environ['LOOP_BENCH_PROFILE']).parent
+profile = json.loads((trial / 'profile.json').read_text())
+effort = profile['efforts'][provider]
+if provider == 'claude':
+    values = [sys.argv[i+1] for i, a in enumerate(sys.argv) if a == '--effort'] + [a.split('=',1)[1] for a in sys.argv if a.startswith('--effort=')]
+    assert values == [effort], values
+    assert os.environ['CLAUDE_CODE_EFFORT_LEVEL'] == effort
+else:
+    assert 'model_reasoning_effort=' + json.dumps(effort) in sys.argv
+    assert 'plan_mode_reasoning_effort=' + json.dumps(effort) in sys.argv
 session = 'worker-session' if prompt == '__NESTED__' else 'conversation-session'
 if prompt != '__NESTED__':
     if prompt.startswith(('/loop-dev ', '$loop-dev ')):
@@ -288,10 +376,102 @@ class RunnerTests(unittest.TestCase):
             path.chmod(0o700)
             self.actual[provider] = str(path)
         self.models = {'claude': 'fixed-claude', 'codex': 'fixed-codex'}
+        self.efforts = {'claude': 'high', 'codex': 'medium'}
+
+    def test_full_check_evaluates_two_types_and_writes_actionable_reports(self):
+        output = self.base / 'checked'
+        with patch('loop_dev.providers.shutil.which', side_effect=lambda p: self.actual.get(p)):
+            value = bench_check.check(self.models, self.efforts, candidate=SOURCE, suite=self.suite,
+                output=output, repeats=1, executables=self.actual, judge_provider='claude',
+                judge_model='independent-judge', judge_effort='xhigh')
+        self.assertEqual(value['phase'], 'completed')
+        self.assertEqual(value['verdict'], 'inconclusive')  # fake CLIs never prove quality
+        self.assertFalse(value['passed'])
+        spec = read_json(output / 'manifest.json')
+        self.assertEqual(spec['goal_types'], ['development', 'explanation'])
+        self.assertEqual(spec['providers'], ['claude', 'codex'])
+        self.assertEqual(spec['evaluation']['model'], 'independent-judge')
+        self.assertEqual(spec['evaluation']['effort'], 'xhigh')
+        self.assertEqual(spec['limits']['default_judge_calls'], 24)
+        judgments = read_json(output / 'judgments.json')
+        self.assertEqual(len(judgments['samples']), 12)
+        processes = list(output.glob('judges/*/*/process.json'))
+        self.assertEqual(len(processes), 24)
+        self.assertTrue(all(read_json(p)['exit_code'] == 0 for p in processes))
+        self.assertTrue(all('xhigh' in read_json(p)['argv'] and 'independent-judge' in read_json(p)['argv'] for p in processes))
+        improvement = read_json(output / 'improvements.json')
+        self.assertEqual(len(improvement['type_outcomes']), 4)
+        self.assertTrue(all(t['completed'] == t['expected'] == 3 for t in improvement['type_outcomes']))
+        self.assertTrue(all(r['rated'] == r['expected'] for r in improvement['comparisons']))
+        self.assertTrue((output / 'improvements.md').is_file())
+
+    def test_missing_cli_check_produces_setup_report_without_scores(self):
+        output = self.base / 'missing-cli'
+        with patch('loop_dev.benchmark.shutil.which', return_value=None):
+            value = bench_check.check(self.models, self.efforts, candidate=SOURCE, suite=self.suite, output=output)
+        self.assertEqual(value['verdict'], 'inconclusive')
+        self.assertEqual(value['phase'], 'run')
+        self.assertIn('Both CLI', value['failure']['error'])
+        improvement = read_json(output / 'improvements.json')
+        self.assertTrue(all(g['quality_mean'] is None for g in improvement['comparisons']))
+        self.assertFalse((output / 'judgments.json').exists())
+        with self.assertRaisesRegex(LoopError, 'new benchmark output'):
+            bench_check.check(self.models, self.efforts, candidate=SOURCE, suite=self.suite, output=output)
+
+    def test_multiple_cases_of_one_goal_type_are_rejected_before_execution(self):
+        original = read_json(self.suite)
+        for kinds in (('development', 'development'), ('explanation', 'session')):
+            value = copy.deepcopy(original)
+            for case, kind in zip(value['cases'], kinds):
+                case['kind'] = kind
+            write_json(self.suite, value)
+            with patch('loop_dev.bench_check.benchmark.run') as run, self.assertRaisesRegex(LoopError, 'two distinct goal types'):
+                bench_check.check(self.models, self.efforts, candidate=SOURCE, suite=self.suite, dry_run=True)
+            run.assert_not_called()
+
+    def test_standalone_script_dry_run_from_another_directory(self):
+        output = self.base / 'dry-output'
+        result = subprocess.run([sys.executable, str(SOURCE / 'scripts/benchmark.py'),
+            '--codex-model', self.models['codex'], '--codex-effort', 'medium',
+            '--claude-model', self.models['claude'], '--claude-effort', 'high',
+            '--dry-run', '--output', str(output)], cwd=self.base, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        value = json.loads(result.stdout)
+        self.assertTrue(value['dry_run'])
+        self.assertEqual(value['providers'], ['claude', 'codex'])
+        self.assertEqual(value['goal_types'], ['development', 'document', 'explanation'])
+        self.assertEqual(value['efforts'], self.efforts)
+        self.assertEqual(value['evaluation'], {'provider': 'codex', 'model': 'fixed-codex', 'effort': 'medium', 'repeats': 2})
+        self.assertFalse(output.exists())
+        for options in ({'output': SOURCE / 'invalid-run'}, {'judge_effort': ''}, {'judge_model': ''}):
+            with self.assertRaises(LoopError):
+                bench_check.check(self.models, self.efforts, candidate=SOURCE, suite=self.suite, dry_run=True, **options)
+
+    def test_effort_conflicts_fail_before_calls_and_claude_env_is_local(self):
+        trial = self.base / 'effort-trial'
+        trial.mkdir()
+        env = dict(os.environ, **transport.prepare_transport(trial, self.models, 20, self.actual, self.efforts))
+        env['CLAUDE_CODE_EFFORT_LEVEL'] = 'low'
+        for provider, flags in [('claude', ['--effort', 'low']), ('claude', ['--effort=low']),
+            ('codex', ['-c', 'model_reasoning_effort="low"']),
+            ('codex', ['--config=plan_mode_reasoning_effort="low"']),
+            ('codex', ['-cmodel_reasoning_effort="low"'])]:
+            command = [str(trial / 'bin' / provider), *(['exec', '-'] if provider == 'codex' else ['-p']), *flags]
+            result = subprocess.run(command, input='__NESTED__', capture_output=True, text=True, env=env)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('effort profile is fixed', result.stderr)
+        self.assertFalse(list((trial / 'calls').glob('*.json')))
+        for flags in ([], ['--effort', 'high'], ['--effort=high']):
+            result = subprocess.run([str(trial / 'bin/claude'), '-p', *flags], input='__NESTED__', capture_output=True, text=True, env=env)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(env['CLAUDE_CODE_EFFORT_LEVEL'], 'low')
+        for efforts in ({'codex':'auto', 'claude':'high'}, {'codex':'medium'}, {'codex':'medium','claude':None}):
+            with self.assertRaises(LoopError):
+                transport.validate_efforts(efforts)
 
     def test_full_paired_runner_both_providers_resumes_and_separates_state(self):
         output = self.base / 'experiment'
-        value = bench.run(self.suite, SOURCE, 'HEAD', self.models, ['claude','codex'], 1, 7, 'isolated fake CLI test', output, self.actual)
+        value = bench.run(self.suite, SOURCE, 'HEAD', self.models, ['claude','codex'], 1, 7, 'isolated fake CLI test', output, self.actual, efforts=self.efforts)
         self.assertEqual(value['verdict'], 'inconclusive')
         self.assertFalse(value['passed'])
         root, spec, index, rows = bench.read_run(output)
@@ -316,12 +496,13 @@ class RunnerTests(unittest.TestCase):
             calls = [read_json(p) for p in (trial / 'calls').glob('*.json')]
             self.assertTrue({'claude','codex'}.issubset({c['provider'] for c in calls}))
             self.assertTrue(all(c['model'] == self.models[c['provider']] for c in calls))
+            self.assertTrue(all(c['effort'] == self.efforts[c['provider']] for c in calls))
         self.assertEqual((self.suite.parent / 'fixtures/tiny-b/beta/source.json').read_text(), '{"value": 42}\n')
 
     def test_wrapper_enforces_model_and_shared_call_budget(self):
         trial = self.base / 'trial'
         trial.mkdir()
-        env = dict(os.environ, **transport.prepare_transport(trial, self.models, 1, self.actual))
+        env = dict(os.environ, **transport.prepare_transport(trial, self.models, 1, self.actual, self.efforts))
         command = [str(trial / 'bin/codex'), 'exec', '-']
         first = subprocess.run(command, input='__NESTED__', text=True, capture_output=True, env=env)
         self.assertEqual(first.returncode, 0, first.stderr)
@@ -358,7 +539,7 @@ class RunnerTests(unittest.TestCase):
         self.suite = make_suite(self.base / 'other-suite')
         output = self.base / 'no-run'
         with patch('loop_dev.benchmark.shutil.which', return_value=None), self.assertRaisesRegex(LoopError, 'Both CLI'):
-            bench.run(self.suite, SOURCE, 'HEAD', self.models, ['codex'], 3, 1, 'test', output)
+            bench.run(self.suite, SOURCE, 'HEAD', self.models, ['codex'], 3, 1, 'test', output, efforts=self.efforts)
         self.assertFalse(output.exists())
 
     def test_checked_in_suite_graders_detect_real_initial_defects(self):
@@ -438,7 +619,8 @@ def add(path, text):
         home = self.base / 'untouched-knowledge'
         result = subprocess.run([sys.executable, str(SOURCE / 'scripts/loop.py'), '--knowledge-home', str(home),
             'bench','plan','--suite',str(self.suite),'--candidate',str(SOURCE),'--reference-ref','HEAD',
-            '--codex-model','fixed-codex','--claude-model','fixed-claude','--provider','codex','--environment','isolated test'],
+            '--codex-model','fixed-codex','--claude-model','fixed-claude','--codex-effort','medium','--claude-effort','high',
+            '--provider','codex','--environment','isolated test'],
             capture_output=True,text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)['planned_trials'], 18)

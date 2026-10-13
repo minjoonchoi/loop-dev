@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 import shutil
 
 from .process import execute
@@ -34,17 +35,30 @@ def reviewer(implementer):
     return "codex" if implementer == "claude" else "claude"
 
 
-def command(provider, root, directory, schema=None, outside_git=False, model=None):
+def effort_args(provider, effort):
+    if effort is None:
+        return []
+    if not isinstance(effort, str) or not re.fullmatch(r'[a-z][a-z0-9_-]{0,31}', effort) or effort in ('auto', 'default'):
+        raise LoopError('Use an explicit effort level supported by the selected model; no automatic fallback')
+    if provider == 'codex':
+        return ['-c', 'model_reasoning_effort=' + json.dumps(effort),
+                '-c', 'plan_mode_reasoning_effort=' + json.dumps(effort)]
+    if provider == 'claude':
+        return ['--effort', effort]
+    raise LoopError('Unknown effort provider')
+
+
+def command(provider, root, directory, schema=None, outside_git=False, model=None, effort=None):
     executable = shutil.which(provider)
     if not executable:
         raise LoopError(f"Required CLI is not installed: {provider}")
     schema_path = directory / "schema.json"
     if provider == "codex":
         return [executable, "--ask-for-approval", "never", "--sandbox", "read-only",
-                "exec", *(["--model", model] if model else []), *(["--skip-git-repo-check"] if outside_git else []), "--ephemeral", "--output-schema", str(schema_path),
+                "exec", *(["--model", model] if model else []), *effort_args(provider, effort), *(["--skip-git-repo-check"] if outside_git else []), "--ephemeral", "--output-schema", str(schema_path),
                 "--output-last-message", str(directory / "answer.json"), "-"]
     if provider == "claude":
-        return [executable, "-p", *(["--model", model] if model else []), "--output-format", "json", "--json-schema",
+        return [executable, "-p", *(["--model", model] if model else []), *effort_args(provider, effort), "--output-format", "json", "--json-schema",
                 json.dumps(schema or REVIEW_SCHEMA, separators=(",", ":")),
                 "--permission-mode", "dontAsk", "--tools", "Read,Glob,Grep",
                 "--allowedTools", "Read,Glob,Grep", "--disallowedTools", "AskUserQuestion,mcp__*",
@@ -104,11 +118,13 @@ def validate_review(value, expected_ids, phase):
     return passed
 
 
-def structured_call(provider, root, directory, prompt, timeout, schema, outside_git=False, model=None):
+def structured_call(provider, root, directory, prompt, timeout, schema, outside_git=False, model=None, effort=None):
     directory.mkdir(parents=True, exist_ok=False)
     write_json(directory / "schema.json", schema)
     (directory / "prompt.txt").write_text(prompt, encoding="utf-8")
-    result = execute(command(provider, root, directory, schema, outside_git, model), root, directory, timeout, prompt=prompt)
+    env = {'CLAUDE_CODE_EFFORT_LEVEL': effort} if provider == 'claude' and effort else None
+    result = execute(command(provider, root, directory, schema, outside_git, model, effort), root, directory, timeout,
+                     prompt=prompt, env_overrides=env)
     write_json(directory / "process.json", result)
     if result["exit_code"] != 0 or result["timed_out"]:
         raise LoopError(f"{provider} call failed; inspect {directory / 'stderr.log'}")

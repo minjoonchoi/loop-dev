@@ -8,7 +8,7 @@ import statistics
 import uuid
 
 from . import providers
-from .benchmark import ARMS, integer, number, read_run, source_snapshot
+from .benchmark import ARMS, goal_type, integer, number, read_run, source_snapshot, validate_evaluation
 from .storage import LoopError, digest, read_json, write_json, write_text
 from .writing import plain
 
@@ -38,17 +38,18 @@ def validate_rating(value, expected):
         raise LoopError('Rubric coverage is missing, duplicated or unknown')
 
 
-def judge(root, provider, model, repeats=2):
+def judge(root, provider, model, repeats=2, effort=None):
     root, spec, index, rows = read_run(root)
-    integer(repeats, 2, 5, 'judge repetitions')
-    if provider not in ('claude', 'codex') or not isinstance(model, str) or not model.strip():
-        raise LoopError('Pin the independent judge provider and model')
+    evaluation = {'provider': provider, 'model': model, 'effort': effort, 'repeats': repeats}
+    validate_evaluation(evaluation)
+    if spec.get('evaluation') and evaluation != spec['evaluation']:
+        raise LoopError('Judge profile differs from the evaluation frozen before execution')
     if not index['complete']:
         raise LoopError('Complete the paired run before judging')
     batch = root / 'judges' / uuid.uuid4().hex
     batch.mkdir(parents=True)
     packets = {r['id']: read_json(root / 'trials' / r['id'] / 'packet.json') for r in rows}
-    result = {'manifest_hash': index['manifest_hash'], 'reviewer': {'provider': provider, 'model': model},
+    result = {'manifest_hash': index['manifest_hash'], 'reviewer': {'provider': provider, 'model': model, 'effort': effort},
               'repeats': repeats, 'samples': {}}
     order = list(packets)
     random.Random(spec['seed']).shuffle(order)
@@ -65,7 +66,7 @@ def judge(root, provider, model, repeats=2):
                       'beyond the scripted requests; explain zero too. No repository workflow or other tools are needed. '
                       'Return the required schema.\nARTIFACT DATA:\n' + json.dumps(packet, ensure_ascii=False))
             value = providers.structured_call(provider, batch, batch / (sample + '-' + str(iteration)), prompt,
-                                               300, RATING_SCHEMA, outside_git=True, model=model)
+                                               300, RATING_SCHEMA, outside_git=True, model=model, effort=effort)
             validate_rating(value, {c['id'] for c in packet['criteria']})
             values.append(value)
             # Preserve partial expensive assessments, but don't publish an incomplete set as passing evidence.
@@ -76,7 +77,7 @@ def judge(root, provider, model, repeats=2):
     return report(root)
 
 
-def assessments(root, index, rows, path=None):
+def assessments(root, index, rows, path=None, evaluation=None):
     path = Path(path) if path else root / 'judgments.json'
     if not path.exists():
         return {}, None
@@ -87,6 +88,8 @@ def assessments(root, index, rows, path=None):
     reviewer = data.get('reviewer')
     if not isinstance(reviewer, dict) or not all(isinstance(reviewer.get(k), str) and reviewer[k].strip() for k in ('provider', 'model')):
         raise LoopError('Assessments need a fixed reviewer identity/model')
+    if evaluation and {**reviewer, 'repeats': data['repeats']} != evaluation:
+        raise LoopError('Assessment judge profile differs from the frozen evaluation')
     by_id = {r['id']: r for r in rows}
     if not isinstance(data.get('samples'), dict) or set(data['samples']) - set(by_id):
         raise LoopError('Unknown rubric sample')
@@ -137,7 +140,7 @@ def interval(values):
 def report(root, judgment_path=None):
     root, spec, index, rows = read_run(root)
     cases = {c['id']: c for c in spec['suite']['cases']}
-    ratings, reviewer = assessments(root, index, rows, judgment_path)
+    ratings, reviewer = assessments(root, index, rows, judgment_path, spec.get('evaluation'))
     expected = {(c, p, r, arm) for c in cases for p in spec['providers'] for r in range(spec['repeats']) for arm in ARMS}
     keyed, scored = {}, {}
     for row in rows:
@@ -147,6 +150,9 @@ def report(root, judgment_path=None):
         keyed[key] = row
         scored[row['id']] = score(row, cases[row['case']], ratings)
     missing, regressions, comparisons = [], [], []
+    types = sorted({goal_type(c) for c in cases.values()})
+    if len(types) < 2:
+        missing.append('At least two distinct goal types must be evaluated')
     if not index['complete'] or set(keyed) != expected:
         missing.append('Paired run is incomplete or inputs/environment changed during execution')
     if spec['repeats'] < spec['suite']['policy']['min_repeats']:
@@ -170,7 +176,7 @@ def report(root, judgment_path=None):
                 if not candidate:
                     continue
                 result = scored[candidate['id']]
-                base = {'case': case_id, 'split': case['split'], 'provider': provider, 'repeat': repeat, 'sample': candidate['id']}
+                base = {'case': case_id, 'goal_type': goal_type(case), 'split': case['split'], 'provider': provider, 'repeat': repeat, 'sample': candidate['id']}
                 if candidate['status'] != 'completed' or not candidate['protected_valid']:
                     regressions.append({**base, 'criterion': 'execution', 'reason': 'Candidate failed or changed protected files',
                                         'evidence': candidate['errors'], 'rule_paths': ['rules/work.md', 'rules/delegation.md']})
@@ -216,10 +222,15 @@ def report(root, judgment_path=None):
     verdict = ('regression' if regressions else 'inconclusive' if missing else
                'improved' if effects['plain'] and effects['plain']['low'] > 0 else 'non_regressing')
     value = {'verdict': verdict, 'passed': verdict in ('improved', 'non_regressing'), 'manifest_hash': index['manifest_hash'],
+             'run_complete': index['complete'],
              'scope': {'suite': spec['suite']['id'], 'suite_hash': spec['suite_hash'], 'providers': spec['providers'],
-                       'models': spec['models'], 'repeats': spec['repeats'], 'source': spec['source'], 'mode': spec['mode']},
+                       'models': spec['models'], 'efforts': spec.get('efforts', {}), 'evaluation': spec.get('evaluation'),
+                       'goal_types': types, 'repeats': spec['repeats'], 'source': spec['source'], 'mode': spec['mode']},
              'effects': effects, 'missing': missing, 'regressions': regressions, 'comparisons': comparisons,
              'samples': [{'id': r['id'], 'case': r['case'], 'provider': r['provider'], 'arm': r['arm'], 'repeat': r['repeat'],
+                          'goal_type': goal_type(cases[r['case']]), 'status': r['status'],
+                          'activation_valid': r['activation_valid'], 'protected_valid': r['protected_valid'],
+                          'errors': r['errors'], 'grading_error': r.get('grading_error', False),
                           'seconds': r['seconds'], 'usage': r['usage'], **scored[r['id']]} for r in rows], 'reviewer': reviewer}
     write_json(root / 'report.json', value)
     lines = ['# Harness benchmark', '', '**' + verdict + '**', '',
@@ -238,7 +249,9 @@ def report(root, judgment_path=None):
                   'Scores come from external checks and rubric evidence; workflow volume and claimed completion earn no points.',
                   '', '[Full evidence and criterion scores](report.json)', ''])
     write_text(root / 'report.md', '\n'.join(lines))
-    return {**value, 'report': str(root / 'report.md')}
+    from .bench_improvements import write_report
+    improvements = write_report(root, spec, value)
+    return {**value, 'report': str(root / 'report.md'), 'improvements': improvements}
 
 
 def gate(root, candidate, suite_path, judgment_path=None):

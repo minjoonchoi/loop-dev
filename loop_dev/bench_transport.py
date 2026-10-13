@@ -13,6 +13,7 @@ import time
 import uuid
 
 from .process import execute
+from .providers import effort_args
 from .storage import LoopError, read_json, write_json
 
 
@@ -51,16 +52,39 @@ def relay(provider):
     if provider == 'codex' and 'exec' not in args or provider == 'claude' and not any(x in args for x in ('-p', '--print')):
         raise LoopError('Benchmark wrappers accept noninteractive calls only')
     model = profile['models'][provider]
+    effort = profile['efforts'][provider]
     for index, arg in enumerate(args):
         if arg in ('--model', '-m') and (index + 1 >= len(args) or args[index + 1] != model):
             raise LoopError('Benchmark model profile is fixed')
         if arg.startswith('--model=') and arg.split('=', 1)[1] != model:
             raise LoopError('Benchmark model profile is fixed')
+        if provider == 'claude':
+            if arg == '--effort' and (index + 1 >= len(args) or args[index + 1] != effort):
+                raise LoopError('Benchmark effort profile is fixed')
+            if arg.startswith('--effort=') and arg.split('=', 1)[1] != effort:
+                raise LoopError('Benchmark effort profile is fixed')
+        else:
+            setting = None
+            if arg in ('-c', '--config'):
+                if index + 1 >= len(args):
+                    raise LoopError('Missing Codex configuration value')
+                setting = args[index + 1]
+            elif arg.startswith('--config='):
+                setting = arg.split('=', 1)[1]
+            elif arg.startswith('-c') and len(arg) > 2:
+                setting = arg[2:].lstrip('=')
+            if setting:
+                key, _, value = setting.partition('=')
+                if key.strip() in ('model_reasoning_effort', 'plan_mode_reasoning_effort') and value.strip().strip('\"\'') != effort:
+                    raise LoopError('Benchmark effort profile is fixed')
     if not any(x in ('--model', '-m') or x.startswith('--model=') for x in args):
         at = args.index('exec') + 1 if provider == 'codex' else 0
         args[at:at] = ['--model', model]
     if provider == 'codex' and '--json' not in args:
         args.insert(args.index('exec') + 1, '--json')
+    if provider == 'codex' or not any(x == '--effort' or x.startswith('--effort=') for x in args):
+        at = args.index('exec') + 1 if provider == 'codex' else 0
+        args[at:at] = effort_args(provider, effort)
     ledger = Path(profile['ledger'])
     ledger.mkdir(exist_ok=True)
     with (ledger / 'lock').open('a') as lock:
@@ -68,11 +92,14 @@ def relay(provider):
         if len(list(ledger.glob('*.json'))) >= profile['max_calls']:
             raise LoopError('Benchmark provider-call budget exhausted')
         path = ledger / (uuid.uuid4().hex + '.json')
-        record = {'provider': provider, 'model': model, 'status': 'running', 'pid': os.getpid(),
+        record = {'provider': provider, 'model': model, 'effort': effort, 'status': 'running', 'pid': os.getpid(),
                   'tokens': None, 'cost_usd': None, 'session': None}
         write_json(path, record)
     started = time.monotonic()
-    result = subprocess.run([binary, *args], input=sys.stdin.buffer.read(), capture_output=True)
+    env = dict(os.environ)
+    if provider == 'claude':
+        env['CLAUDE_CODE_EFFORT_LEVEL'] = effort
+    result = subprocess.run([binary, *args], input=sys.stdin.buffer.read(), capture_output=True, env=env)
     sys.stdout.buffer.write(result.stdout)
     sys.stderr.buffer.write(result.stderr)
     try:
@@ -85,11 +112,12 @@ def relay(provider):
     raise SystemExit(result.returncode)
 
 
-def prepare_transport(directory, models, max_calls, executables=None):
+def prepare_transport(directory, models, max_calls, executables=None, efforts=None):
+    validate_efforts(efforts)
     actual = executables or {p: shutil.which(p) for p in models}
     if any(not actual.get(p) for p in models):
         raise LoopError('Both Claude and Codex CLIs are required for live harness benchmarks')
-    profile = {'executables': actual, 'models': models, 'max_calls': max_calls,
+    profile = {'executables': actual, 'models': models, 'efforts': efforts, 'max_calls': max_calls,
                'ledger': str(directory / 'calls')}
     write_json(directory / 'profile.json', profile)
     binary_dir = directory / 'bin'
@@ -103,6 +131,13 @@ def prepare_transport(directory, models, max_calls, executables=None):
     return {'PATH': str(binary_dir) + os.pathsep + os.environ.get('PATH', ''),
             'LOOP_BENCH_PROFILE': str(directory / 'profile.json'),
             'LOOP_KB_HOME': str(directory / 'knowledge')}
+
+
+def validate_efforts(efforts):
+    if not isinstance(efforts, dict) or set(efforts) != {'codex', 'claude'} or any(v is None for v in efforts.values()):
+        raise LoopError('Pin explicit effort levels for both Claude and Codex')
+    for provider, value in efforts.items():
+        effort_args(provider, value)
 
 
 def conversation(provider, model, root, trial, directory, prompt, session, timeout, env):

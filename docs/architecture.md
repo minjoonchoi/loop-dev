@@ -304,12 +304,17 @@ review. The model cannot set the persisted completed state through a review resu
 
 ## Harness outcome evaluation
 
-Benchmarking is separate from the harness's own completion gates. `bench plan/run`
+Benchmarking is separate from the harness's own completion gates. `scripts/benchmark.py`
+invokes `bench check`: freeze configuration, run, judge, gate and produce improvements.
+`bench_check.py` owns this sequence and records an inconclusive result when a phase fails;
+an unjudged run does not stop the sequence. `bench plan/run`
 freezes a suite, current candidate and reference Git snapshot; every case/provider/
 repetition runs plain, reference and candidate in seeded random order. Inputs, model
-profiles and budgets match. Trial-local CLI wrappers enforce model IDs and reserve
+profiles and budgets match. Trial-local CLI wrappers enforce model IDs and efforts and reserve
 a shared call budget for the conversation and its nested workers/reviewers. Existing
 host policy and authentication remain in effect. No SDK or global hook is installed.
+The suite must contain at least two distinct goal types. Session reuse is a scenario
+dimension; the starter session case counts as explanation, alongside development and document.
 
 Each trial gets fresh repositories, knowledge and an explicitly identified provider
 conversation. Later turns resume that conversation, including directory transitions.
@@ -321,6 +326,8 @@ process group and observed descendants, including nested groups; it is not an OS
 After execution, an external checker runs on a separate artifact copy. A random-ID
 packet contains only requests, answers, declared fixture source context/changes, deliverables and anchored rubric
 criteria. A fixed read-only judge independently assesses each packet at least twice.
+The full check freezes judge provider/model/effort/repetitions before running any trial;
+later assessments must match that profile. Both vendors' results use the same judge.
 Disagreements use the lower score. Human assessments use the same packet-bound schema.
 Treatment inference from prose and model judging errors remain possible.
 
@@ -330,6 +337,12 @@ floor, paired losses and excess overhead block promotion regardless of average g
 Incomplete execution/evidence, failed controls and fake-CLI runs cannot establish an
 improvement. `bench gate` rechecks hashes of artifacts, logs, candidate and suite.
 Bootstrap intervals describe the selected paired observations, not unseen tasks.
+`bench_improvements.py` deterministically groups repeated failures, reports each goal
+type's coverage and comparison, and ranks setup/evidence, quality/intervention and
+duration issues. Observations, causal hypotheses, related rules, bounded next changes
+and revalidation remain distinct JSON fields. The human view shows at most five items;
+the full JSON preserves evidence without additional model calls. No rule change is
+invented for equal valid results, and a failed final gate cannot leave a passing check summary.
 
 `bench proposal` stores a bounded rule hypothesis with affected cases, their scores,
 regressions and frozen source/suite hashes. It does not edit rules automatically.
