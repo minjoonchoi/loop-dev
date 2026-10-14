@@ -9,11 +9,35 @@ from pathlib import Path
 
 from .contract import identifier
 from .knowledge import KnowledgeBase
-from .storage import LoopError, digest, locked, now
+from .storage import LoopError, digest, locked, now, read_json
 from .writing import concise
 
 
 KINDS = ("development", "document", "explanation", "research", "review", "planning")
+
+
+def completion_feedback(knowledge, task_id, expected_revision=None, require_worker=False, db=None):
+    """Check task controls and, at completion, a worker's substantive feedback receipt."""
+    from .orchestration import worker_context
+    if db is None:
+        with knowledge.connection() as connection:
+            connection.execute("BEGIN")
+            return completion_feedback(knowledge, task_id, expected_revision, require_worker, connection)
+    feedback = worker_context(knowledge, task_id, db=db)
+    if expected_revision is not None and feedback["revision"] != expected_revision:
+        raise LoopError("User feedback changed during review or completion; restore context and verify again")
+    if feedback["blocked"]:
+        raise LoopError(feedback["block_reason"] or "User feedback blocks this task")
+    if require_worker and feedback["requires_worker"]:
+        workers = [json.loads(row[0]) for row in db.execute("SELECT body FROM records WHERE kind='delegation'")]
+        workers = [item for item in workers if item.get("task_id") == task_id and item.get("status") == "done"]
+        latest = max(workers, key=lambda item: (item.get("finished_at", item.get("started_at", "")), item["id"]), default=None)
+        if latest is None or latest.get("feedback_substantive_revision") != feedback["substantive_revision"]:
+            raise LoopError("Latest substantive user feedback must be consumed by a successful worker before completion")
+        if (not latest.get("result") or not latest.get("result_digest") or
+                digest(read_json(Path(latest["result"]))) != latest["result_digest"]):
+            raise LoopError("The latest worker result is missing or changed; verify user feedback in a fresh worker")
+    return feedback
 
 
 class Work:
@@ -50,12 +74,14 @@ class Work:
     def locations(self, task):
         return [self.knowledge.get("location", key) for key in task["locations"]]
 
-    def save(self, task, topics=()):
+    def save(self, task, topics=(), feedback_revision=None, require_worker=False):
         with self.knowledge.connection() as db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute("SELECT body FROM records WHERE kind='task' AND id=?", (task["id"],)).fetchone()
             if not row or json.loads(row[0])["version_token"] != task["version_token"]:
                 raise LoopError("Task changed concurrently; restore its latest context")
+            if feedback_revision is not None:
+                completion_feedback(self.knowledge, task["id"], feedback_revision, require_worker=require_worker, db=db)
             task.update(version_token=uuid.uuid4().hex, updated_at=now())
             for topic in topics:
                 self.knowledge.put_topic(topic, db)
@@ -102,13 +128,21 @@ class Work:
             raise LoopError("Define the goal before starting")
         if task["goal"]["open_questions"]:
             raise LoopError("Resolve user-owned questions before work starts")
+        feedback = completion_feedback(self.knowledge, task_id)
         task.update(phase="working", goal_seal=digest(task["goal"]),
                     baseline=self.knowledge.observe(self.locations(task)), started_at=now())
-        self.save(task)
+        self.save(task, feedback_revision=feedback["revision"])
         return self.context(task_id)
 
     def delegate(self, task_id, request, path=None, recover=None):
         from .delegation import Delegation
+        return self.run_workers(Delegation, task_id, request, path, recover)
+
+    def team(self, task_id, plan, path=None, recover=None):
+        from .team import Team
+        return self.run_workers(Team, task_id, plan, path, recover)
+
+    def run_workers(self, runner, task_id, request, path=None, recover=None):
         task = self.load(task_id)
         locations = self.locations(task)
         if path is None and len(locations) != 1:
@@ -118,12 +152,19 @@ class Work:
             raise LoopError("The selected path does not belong to this task")
         root = Path(location["root"])
         with locked(root) if location["git"] else nullcontext():
-            return Delegation(self.knowledge, task_id, root).run(request, recover)
+            return runner(self.knowledge, task_id, root).run(request, recover)
 
     def finish(self, task_id, result):
+        if not identifier(task_id):
+            raise LoopError("Invalid task ID")
+        with locked(self.knowledge.home / "task-locks" / task_id):
+            return self._finish(task_id, result)
+
+    def _finish(self, task_id, result):
         task = self.load(task_id)
         if task["phase"] != "working" or digest(task["goal"]) != task["goal_seal"]:
             raise LoopError("Only work on an unchanged, started goal can finish")
+        feedback = completion_feedback(self.knowledge, task_id, require_worker=True)
         if (not isinstance(result, dict) or not isinstance(result.get("summary"), str) or not result["summary"].strip()
                 or not isinstance(result.get("outputs"), list) or not result["outputs"]
                 or not all(isinstance(x, str) and x.strip() for x in result["outputs"])):
@@ -152,9 +193,10 @@ class Work:
         topics = [self.knowledge.prepare_topic(entry, observations, task["session_id"], task_id) for entry in entries]
         if self.knowledge.observe(locations) != observations:
             raise LoopError("Inputs changed while completing work; inspect the changes")
-        task.update(phase="completed", completed_at=now(), result={**result, "historical": True},
+        task.update(phase="completed", completed_at=now(), result={**result, "historical": True,
+                    "feedback_revision": feedback["revision"], "feedback_substantive_revision": feedback["substantive_revision"]},
                     completion_observation=digest(observations))
-        self.save(task, topics)
+        self.save(task, topics, feedback_revision=feedback["revision"], require_worker=True)
         return {"passed": True, **self.context(task_id)}
 
     def note(self, task_id, text, evidence):
@@ -184,9 +226,10 @@ class Work:
             raise LoopError("Only blocked work can resume")
         if task.get("goal_seal") and task["goal_seal"] != digest(task["goal"]):
             raise LoopError("Restore the goal before resuming")
+        feedback = completion_feedback(self.knowledge, task_id)
         task["phase"] = task["previous_phase"]
         task.pop("reason", None)
-        self.save(task)
+        self.save(task, feedback_revision=feedback["revision"])
         return self.context(task_id)
 
     def context(self, task_id):

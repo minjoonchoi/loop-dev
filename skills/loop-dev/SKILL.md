@@ -5,9 +5,11 @@ description: Explicitly enable the portable goal-setting and work harness for th
 
 # Loop Dev
 
-Enable the harness for this conversation, not just the accompanying goal. The
-conversation orchestrates; tools perform explicit bounded assignments. Do not give
-the user an operating checklist or require another skill prefix on later requests.
+Enable the harness for this conversation, not just the accompanying goal. Keep the
+main session to goals, user feedback, orchestration, evidence checks and reporting.
+Delegate substantive investigation, planning, implementation and writing to isolated
+workers. Do not give the user an operating checklist or require another skill prefix
+on later requests.
 
 ## Activate once
 
@@ -17,8 +19,11 @@ the user an operating checklist or require another skill prefix on later request
    `.agents/skills/loop-dev/` or `.claude/skills/loop-dev/`; the project entrypoint is
    `.loop/loop.py`. In the source repository, `skills/loop-dev/` uses `scripts/loop.py`.
    Retain the entrypoint's absolute path; do not resolve it again from a later cwd.
-3. Read the adjacent harness `rules/work.md`, `rules/delegation.md` and
-   `rules/writing.md` (`.loop/rules/` in an installed project).
+3. Read the adjacent harness `rules/work.md` once (`.loop/rules/` in an installed
+   project). Read `rules/delegation.md` when assigning workers, `rules/context.md`
+   for recovery/feedback/knowledge details, and `rules/writing.md` when saving records.
+   Load `rules/workflow.md` for development. Reuse these instructions while current;
+   do not reload every reference or the full execution history on every turn.
 4. For explicit activation, run `python3 ENTRYPOINT harness on --provider PROVIDER`.
    Use `claude` inside Claude Code or `codex` inside Codex. If this conversation
    already has a bound session ID, add `--session SESSION_ID`; never create another
@@ -34,8 +39,10 @@ the user an operating checklist or require another skill prefix on later request
 
 ## Handle every later input
 
-- Before routing each input, run `python3 ENTRYPOINT --knowledge-home KNOWLEDGE_HOME
-  harness status SESSION_ID`. When enabled, follow `work.md` for **all** inputs:
+- After every user input, worker result and compaction, run
+  `python3 ENTRYPOINT --knowledge-home KNOWLEDGE_HOME orchestration context SESSION_ID`
+  with `--task TASK_ID` when selected. Start with this at-most-16-KiB capsule, its
+  control version and artifact references. When enabled, follow `work.md` for **all** inputs:
   development, new unrelated goals, documents, explanations, research, planning,
   progress questions, corrections, acknowledgments and stop requests.
 - Goal completion never disables the harness. Changing task type or directory never
@@ -45,7 +52,7 @@ the user an operating checklist or require another skill prefix on later request
   `--path PATH` for another project; read that project's applicable rules. Keep the
   same knowledge home. Do not require another installation merely to stay enabled.
 - Restore the same binding after compaction or an explicitly resumed conversation.
-  Status and knowledge context expose activation independently of task completion.
+  The orchestration capsule exposes activation independently of task completion.
   A separate conversation starts inactive; old knowledge is not activation consent.
   If a binding is lost, recover it from this conversation's identified task/goal,
   never the latest session. If no ownership evidence survives, report the missing
@@ -54,13 +61,27 @@ the user an operating checklist or require another skill prefix on later request
   answers; resolve only missing human-owned decisions before work starts. Delegate
   analysis, planning, implementation and writing with explicit read/write scope,
   prohibitions, deliverables and criteria. During work, continue without questions.
+- Use `delegate` for a small bounded unit or `team` for cooperating roles (`work`
+  subcommands for common tasks). Own the plan; keep each worker's role and scope
+  fixed across turns. Let the coordinator route bounded peer questions, answers and
+  findings automatically. Workers cannot spawn, redelegate, ask users or change goals.
+  Each call has an isolated CLI context; writes are serialized and budgets remain finite.
+- Persist task steering with `orchestration feedback` using the capsule's current
+  control version and the original user input reference; follow `context.md` for
+  the exact fields. Send constraints/corrections to affected workers before applying
+  their results. Record pause/resume explicitly. A frozen scope change blocks the
+  old task and needs a new goal; peer messages never provide user authority.
 - Development uses `workflow.md`: implementation, real tests, opposite-provider
   review and bounded repair. Documents/explanations/research/planning use one pass
   plus completion checks. Status, acknowledgments and steering update the current
   context without inventing a new goal or a recurring development loop.
-- Save useful evidence, scoped decisions and results; inspect changed dependencies
-  before refreshing knowledge. Follow `writing.md`: compact facts, no repeated
-  narrative logs. User restrictions, including no recording, take precedence.
+- Read compact role results and artifact references. Open only the specific evidence
+  needed for an orchestration decision; leave source analysis, full logs, messages
+  and outputs in worker contexts and durable records. Never default to loading full
+  `context.json`/history/transcripts or create duplicate handoff summaries.
+- Save useful evidence, scoped decisions and results; delegate changed-dependency
+  inspection before refreshing knowledge. Follow `writing.md`: compact facts, no
+  repeated narrative logs. User restrictions, including no recording, take precedence.
 
 ## Disable only on request
 

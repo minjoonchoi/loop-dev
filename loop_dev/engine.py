@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 import uuid
 
@@ -11,6 +12,7 @@ from .contract import identifier, template, validate
 from .process import execute
 from .session import Session
 from .knowledge import KnowledgeBase
+from .work import completion_feedback
 from .writing import concise, task_document, task_summary
 from .storage import (LoopError, digest, engine_digest, head, inside, now, read_json,
                       rule_manifest, snapshot, write_json, write_text)
@@ -108,6 +110,25 @@ class Engine:
         session.sync_goal(state, contract, discovery)
         return session
 
+    def work_id(self, state=None, contract=None, discovery=None):
+        key = self.knowledge.development_id(self.knowledge.attach(self.root), self.id)
+        if self.knowledge.get("task", key, required=False) is None:
+            if state is None:
+                state, contract, discovery = self.load()
+            self.session(state, contract, discovery)
+            self.knowledge.record_development(self.root, state, contract, discovery)
+        return key
+
+    def review_prompt(self, feedback, *args, **kwargs):
+        prompt = context.review_prompt(*args, **kwargs)
+        instruction, payload = prompt.split("\nREVIEW DATA:\n", 1)
+        value = json.loads(payload)
+        value.update(feedback_revision=feedback["revision"],
+                     feedback_substantive_revision=feedback["substantive_revision"], user_feedback=feedback)
+        return (instruction + "\nReview the effective user feedback within the stated goal. "
+                "For execution reviews, report blocked if it requires changing frozen scope or acceptance.\nREVIEW DATA:\n"
+                + json.dumps(value, ensure_ascii=False, indent=2))
+
     def refresh(self):
         state, contract, discovery = self.load()
         session_context = self.session(state, contract, discovery).refresh(self.id)
@@ -126,6 +147,17 @@ class Engine:
             if not value["evidence_current"]:
                 value["next"] = {"action": "report_stale", "instruction": "Files changed after completion; new work needs a new goal."}
         path = self.state_dir / "context.json"
+        from .orchestration import worker_context
+        feedback = worker_context(self.knowledge, self.work_id(state, contract, discovery))
+        value["user_feedback"] = feedback
+        if feedback["blocked"]:
+            value["next"] = {"action": "report_blocked", "instruction": feedback["block_reason"]}
+        if state["phase"] == "completed":
+            feedback_current = (state.get("completion_feedback_revision") == feedback["revision"] or
+                                not state.get("completion_feedback_revision") and not feedback["feedback"])
+            value["evidence_current"] = value["evidence_current"] and feedback_current and not feedback["blocked"]
+            if not value["evidence_current"] and not feedback["blocked"]:
+                value["next"] = {"action": "report_stale", "instruction": "Completion evidence is stale; inspect the changed files or user feedback before claiming completion."}
         work = self.knowledge.record_development(self.root, state, contract, discovery, value.get("evidence_current"),
                                                value["next"]["instruction"])
         value["work"] = {"id": work["id"], "kind": "development", "phase": work["phase"]}
@@ -141,6 +173,7 @@ class Engine:
             write_text(document, rendered)
         return {"goal": self.id, "phase": state["phase"], "session_id": state["session_id"],
                 "work_id": work["id"], "context": str(path), "document": str(document), "next": value["next"],
+                "feedback_revision": feedback["revision"], "feedback_blocked": feedback["blocked"],
                 **{key: value[key] for key in ("integrity_ok", "evidence_current", "integrity_error") if key in value}}
 
     def plan_review(self):
@@ -149,6 +182,8 @@ class Engine:
             raise LoopError("Plan review is only allowed before freeze")
         self.active()
         self.check_valid(contract, discovery)
+        task_id = self.work_id(state, contract, discovery)
+        feedback = completion_feedback(self.knowledge, task_id)
         state.pop("plan_review", None)
         self.save(state, "plan-review-started")
         if discovery["baseline_head"] != head(self.root):
@@ -162,19 +197,28 @@ class Engine:
             raise LoopError(f"Both CLIs must be available before starting; inspect {run_dir / 'doctor.json'}")
         ids = [x["id"] for x in contract["target"]["acceptance"]]
         session = self.session(state, contract, discovery)
-        prompt = context.review_prompt(self.root, contract, discovery, "plan", ids, {}, before,
-                                       session_context=session.refresh(self.id))
+        prompt = self.review_prompt(feedback, self.root, contract, discovery, "plan", ids, {}, before,
+                                    session_context=session.refresh(self.id))
         review = providers.review(providers.reviewer(contract["execution"]["implementer"]), self.root,
                                   run_dir / "review", prompt, contract["execution"]["review_timeout_seconds"], ids, "plan")
         if snapshot(self.root)["digest"] != before["digest"] or self.inputs(*self.load()[1:]) != inputs:
             raise LoopError("Repository changed during read-only plan review; review is invalid")
         report = {"phase": "plan", "at": now(), "passed": review["passed"], "review": review,
-                  "inputs": inputs, "snapshot": before["digest"], "doctor": health}
+                  "inputs": inputs, "snapshot": before["digest"], "doctor": health,
+                  "feedback_revision": feedback["revision"],
+                  "feedback_substantive_revision": feedback["substantive_revision"]}
         path = run_dir / "gate.json"
-        write_json(path, report)
-        state["latest_gate"] = str(path)
-        state["plan_review"] = str(path)
-        self.save(state, "plan-reviewed")
+        with self.knowledge.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            try:
+                completion_feedback(self.knowledge, task_id, feedback["revision"], db=db)
+            except LoopError as exc:
+                report.update(passed=False, error=str(exc))
+            write_json(path, report)
+            state["latest_gate"] = str(path)
+            if not report.get("error"):
+                state["plan_review"] = str(path)
+            self.save(state, "plan-reviewed")
         session.capture_review(state, contract, discovery, report)
         self.refresh()
         return report
@@ -182,7 +226,12 @@ class Engine:
     def delegate(self, request, recover=None):
         from .delegation import Delegation
         self.refresh()
-        return Delegation(self.knowledge, self.knowledge.development_id(self.knowledge.attach(self.root), self.id), self.root).run(request, recover)
+        return Delegation(self.knowledge, self.work_id(), self.root).run(request, recover)
+
+    def team(self, plan, recover=None):
+        from .team import Team
+        self.refresh()
+        return Team(self.knowledge, self.work_id(), self.root).run(plan, recover)
 
     def freeze(self):
         state, contract, discovery = self.load()
@@ -193,14 +242,22 @@ class Engine:
         if not state.get("plan_review"):
             raise LoopError("Run the live cross-provider plan-review before freeze")
         report = read_json(Path(state["plan_review"]))
+        task_id = self.work_id(state, contract, discovery)
+        feedback = completion_feedback(self.knowledge, task_id)
+        if (report.get("feedback_revision") != feedback["revision"] and
+                (report.get("feedback_revision") is not None or feedback["feedback"])):
+            raise LoopError("Plan review has stale user feedback; run plan-review again")
         inputs = self.inputs(contract, discovery)
         current = snapshot(self.root)
         if not report["passed"] or report["inputs"] != inputs or report["snapshot"] != current["digest"]:
             raise LoopError("Plan review failed or is stale; resolve findings and run plan-review again")
-        state.update(phase="ready", frozen_inputs=inputs, frozen_at=now(), ready_snapshot=current["digest"],
-                     baseline_snapshot=current, implementer=contract["execution"]["implementer"])
-        write_json(self.state_dir / "frozen.json", {"contract": contract, "discovery": discovery, "inputs": inputs})
-        self.save(state, "frozen")
+        with self.knowledge.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            completion_feedback(self.knowledge, task_id, feedback["revision"], db=db)
+            state.update(phase="ready", frozen_inputs=inputs, frozen_at=now(), ready_snapshot=current["digest"],
+                         baseline_snapshot=current, implementer=contract["execution"]["implementer"])
+            write_json(self.state_dir / "frozen.json", {"contract": contract, "discovery": discovery, "inputs": inputs})
+            self.save(state, "frozen")
         return self.refresh()
 
     def start(self):
@@ -210,9 +267,14 @@ class Engine:
         self.integrity(state, contract, discovery)
         if snapshot(self.root)["digest"] != state["ready_snapshot"]:
             raise LoopError("Code changed since preflight; create a new preflight goal")
-        self.active(claim=True)
-        state.update(phase="running", started_at=now(), retryable=False)
-        self.save(state, "started")
+        task_id = self.work_id(state, contract, discovery)
+        feedback = completion_feedback(self.knowledge, task_id)
+        with self.knowledge.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            completion_feedback(self.knowledge, task_id, feedback["revision"], db=db)
+            self.active(claim=True)
+            state.update(phase="running", started_at=now(), retryable=False)
+            self.save(state, "started")
         return self.refresh()
 
     def remaining(self, state, contract):
@@ -238,6 +300,8 @@ class Engine:
             raise LoopError("All milestones must pass before finish")
         if milestone is not None and (not todo or todo[0]["id"] != milestone):
             raise LoopError("Checkpoint must match the next incomplete milestone")
+        task_id = self.work_id(state, contract, discovery)
+        feedback = completion_feedback(self.knowledge, task_id, require_worker=milestone is None)
         key = "final" if milestone is None else "milestone-" + milestone
         attempts = state["attempts"].get(key, 0)
         if attempts >= contract["execution"]["max_gate_attempts"] or self.remaining(state, contract) <= 0:
@@ -255,7 +319,9 @@ class Engine:
         checks = [x for x in contract["checks"] if milestone is None
                   or x["id"] in selected_checks or x["kind"] == "regression"]
         report = {"phase": phase, "milestone": milestone, "attempt": attempts + 1, "at": now(),
-                  "passed": False, "checks": [], "review": None, "error": None}
+                  "passed": False, "checks": [], "review": None, "error": None,
+                  "feedback_revision": feedback["revision"],
+                  "feedback_substantive_revision": feedback["substantive_revision"]}
         try:
             before = snapshot(self.root)
             for check in checks:
@@ -274,15 +340,17 @@ class Engine:
                 remaining = self.remaining(state, contract)
                 if remaining <= 0:
                     raise LoopError("Execution budget exhausted")
-                prompt = context.review_prompt(self.root, contract, discovery, phase, ids, report["checks"],
-                                               state["baseline_snapshot"], state["notes"],
-                                               self.session(state, contract, discovery).refresh(self.id))
+                completion_feedback(self.knowledge, task_id, feedback["revision"], require_worker=milestone is None)
+                prompt = self.review_prompt(feedback, self.root, contract, discovery, phase, ids, report["checks"],
+                                            state["baseline_snapshot"], state["notes"],
+                                            self.session(state, contract, discovery).refresh(self.id))
                 report["review"] = providers.review(
                     providers.reviewer(state["implementer"]), self.root, run_dir / "review", prompt,
                     min(contract["execution"]["review_timeout_seconds"], max(0.01, remaining)), ids, phase)
                 if snapshot(self.root)["digest"] != before["digest"]:
                     raise LoopError("Read-only reviewer changed repository inputs; review is invalid")
                 self.integrity(state, *self.load()[1:])
+                completion_feedback(self.knowledge, task_id, feedback["revision"], require_worker=milestone is None)
                 report["passed"] = report["review"]["passed"]
             report["snapshot"] = before["digest"]
         except (LoopError, OSError) as exc:
@@ -291,7 +359,6 @@ class Engine:
             self.block("Gate interrupted; inspect logs before resume", retryable=True)
             raise
         report_path = run_dir / "gate.json"
-        write_json(report_path, report)
         state.pop("inflight", None)
         state["latest_gate"] = str(report_path)
         exhausted = (state["attempts"][key] >= contract["execution"]["max_gate_attempts"]
@@ -301,19 +368,33 @@ class Engine:
             self.integrity(state, *self.load()[1:])
         except LoopError:
             integrity_ok = False
-        if report["passed"] and integrity_ok:
-            if milestone is not None:
-                state["milestones"].append({"id": milestone, "snapshot": report["snapshot"], "gate": str(report_path)})
-            else:
-                state.update(phase="completed", completed_at=now(), completion_snapshot=report["snapshot"])
-                self.release()
-        elif exhausted or not integrity_ok:
-            state.update(phase="blocked", retryable=False,
-                         block_reason=report["error"] or "Gate attempt/time budget exhausted")
-        elif report["error"] or (report["review"] and report["review"]["result"]["verdict"] == "blocked"):
-            state.update(phase="blocked", retryable=True,
-                         block_reason=report["error"] or report["review"]["result"]["summary"])
-        self.save(state, "gate-passed" if report["passed"] else "gate-failed")
+        # Serialize the final control check and state acceptance with feedback
+        # writers. Model calls and checks run outside this short transaction.
+        with self.knowledge.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            try:
+                completion_feedback(self.knowledge, task_id, feedback["revision"],
+                                    require_worker=milestone is None, db=db)
+            except LoopError as exc:
+                report.update(passed=False, error=str(exc))
+            if not integrity_ok:
+                report["passed"] = False
+            write_json(report_path, report)
+            if report["passed"]:
+                if milestone is not None:
+                    state["milestones"].append({"id": milestone, "snapshot": report["snapshot"], "gate": str(report_path),
+                                                "feedback_revision": feedback["revision"]})
+                else:
+                    state.update(phase="completed", completed_at=now(), completion_snapshot=report["snapshot"],
+                                 completion_feedback_revision=feedback["revision"])
+                    self.release()
+            elif exhausted or not integrity_ok:
+                state.update(phase="blocked", retryable=False,
+                             block_reason=report["error"] or "Gate attempt/time budget exhausted")
+            elif report["error"] or (report["review"] and report["review"]["result"]["verdict"] == "blocked"):
+                state.update(phase="blocked", retryable=True,
+                             block_reason=report["error"] or report["review"]["result"]["summary"])
+            self.save(state, "gate-passed" if report["passed"] else "gate-failed")
         self.session(state, contract, discovery).capture_review(state, contract, discovery, report)
         report["status"] = self.refresh()
         return report
@@ -334,9 +415,14 @@ class Engine:
         self.integrity(state, contract, discovery)
         if self.remaining(state, contract) <= 0:
             raise LoopError("Run time budget exhausted")
-        state.pop("inflight", None)
-        state.update(phase="running", block_reason=None, retryable=False)
-        self.save(state, "resumed")
+        task_id = self.work_id(state, contract, discovery)
+        feedback = completion_feedback(self.knowledge, task_id)
+        with self.knowledge.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            completion_feedback(self.knowledge, task_id, feedback["revision"], db=db)
+            state.pop("inflight", None)
+            state.update(phase="running", block_reason=None, retryable=False)
+            self.save(state, "resumed")
         return self.refresh()
 
     def abort(self, reason):

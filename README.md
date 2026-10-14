@@ -3,7 +3,8 @@
 **목표를 말하면 맥락을 복원하고, 작업을 수행하고, 결과를 확인해 기록하는 Claude Code·Codex 공통 하네스**입니다.
 
 스킬을 한 번 시작하면 **해당 대화의 모든 후속 입력**에 하네스를 적용합니다.
-작업은 **목표 설정 → 작업**으로 진행합니다. 개발은 구현·테스트·독립 검토·수정을 반복하고,
+메인 대화는 목표·사용자 피드백·작업 조율·결과 보고에 집중하고, 실제 조사·계획·구현·작성은
+분리된 작업자에게 위임합니다. 작업은 **목표 설정 → 작업**으로 진행합니다. 개발은 구현·테스트·독립 검토·수정을 반복하고,
 문서·설명·조사·계획은 결과를 작성해 완료 조건을 확인합니다. 에이전트가 실행 상태와 로컬 지식을
 관리하므로 사용자가 코드 구조, 이전 답변, 다음 행동을 프롬프트마다 다시 설명할 필요가 없습니다.
 
@@ -75,18 +76,18 @@ Claude는 `disable-model-invocation: true`, Codex는 `allow_implicit_invocation:
 
 ```mermaid
 flowchart TD
-    O["대화: 목표 설정·작업 지시"] --> H["하네스: 지시·필요 맥락 전달"]
-    H --> W["작업 도구: 지정된 조사·구현·작성"]
-    W --> V{"범위·근거 검사"}
-    V -- "부족·범위 위반" --> O
-    V -- "유효한 결과" --> G["변경 적용·완료 검증"]
-    G -- "검토 결과·다음 작업" --> O
-    O <--> K["로컬 지식·실행 기록"]
+    U["사용자: 목표·피드백"] <--> O["메인: 조율·검증·보고"]
+    O --> H["하네스: 범위·예산·적용 검사"]
+    H --> A["작업자 A: 지정 역할"]
+    H --> B["작업자 B: 지정 역할"]
+    A <-->|"수신자 지정 메시지"| B
+    H <--> K["영속 상태·전달물"]
+    K -->|"작은 복구 맥락"| O
 ```
 
 | 담당 | 책임 |
 | --- | --- |
-| 대화 | 목표와 결정 정리, 작업 분해, 명시적인 위임, 결과 확인과 다음 지시 |
+| 메인 대화 | 목표·사용자 피드백 정리, 명시적인 위임, 결과 확인과 다음 지시·보고 |
 | 작업 도구 | 전달받은 범위의 조사·계획·구현·문서 작성; 부족한 입력은 장애로 반환 |
 | 하네스 | 결과 형식·수정 경로·원본 해시 검사, 수정안 적용, 테스트·독립 검토 실행, 기록 저장 |
 
@@ -98,6 +99,19 @@ flowchart TD
 지시의 범위와 공급자 권한은 읽기 동작을 제한하며, 파일별 OS 격리를 제공하는 것은 아닙니다.
 실제 적용되는 수정은 정확한 허용 경로와 원본 해시로 검사합니다. 자세한 계약은
 [위임 규칙](rules/delegation.md)을 따릅니다.
+
+여러 역할이 협력해야 하면 `team`으로 고정된 역할과 범위를 부여합니다. 작업자는 별도 CLI 맥락에서
+실행되며, 서로에게 질문·답변·발견 사항을 보낼 수 있습니다. 하네스가 수신자와 근거를 검사해 다음
+작업자 호출에 전달하므로 메인 대화가 모든 메시지를 중계하지 않습니다. 호출·대화 횟수는 제한되며,
+파일 적용은 순서대로 진행합니다. 공급자의 실시간 채팅이나 동시 파일 수정을 전제하지 않습니다.
+작은 단일 작업에는 기존 `delegate`를 사용합니다. 개발의 최종 독립 검토는 그대로 유지됩니다.
+
+매 사용자 입력·작업 결과·맥락 압축 뒤에는 `orchestration context`의 **최대 16KiB 복구 맥락**부터
+읽습니다. 현재 목표·제어 상태·역할별 결과와 전달물 위치만 확인하고, 필요할 때 해당 근거를 엽니다.
+전체 로그·출력·메시지는 디스크에 보존하며, 메인 대화에 모두 복사하거나 별도 요약을 계속 쌓지 않습니다.
+작업 중 피드백은 버전이 있는 기록으로 남겨 영향받는 작업자에게 전달하고 수정 적용 전에 확인합니다.
+고정한 목표·완료 조건을 바꾸는 요청은 기존 작업을 막고 새 목표로 진행합니다. 이는 맥락 사용을
+줄이기 위한 구조이며, 호스트의 압축 빈도나 실제 모델 품질 개선을 보장하지는 않습니다.
 
 ## 다시 설명하지 않아도 이어지는 지식
 
@@ -137,10 +151,11 @@ flowchart TD
 | 용도 | 명령 |
 | --- | --- |
 | 세션 활성화 | `harness on`, `harness status`, `harness off` |
-| 공통 작업 | `work open`, `work goal`, `work start`, `work delegate`, `work context`, `work finish` |
+| 공통 작업 | `work open`, `work goal`, `work start`, `work delegate`, `work team`, `work finish` |
+| 메인 복구·피드백 | `orchestration context`, `orchestration feedback` |
 | 지식 재사용·갱신 | `knowledge context`, `knowledge remember`, `knowledge get`, `knowledge history` |
 | 프로젝트 연결 | `knowledge projects`, `knowledge attach` |
-| 개발 | `init`, `delegate`, `validate`, `doctor`, `plan-review`, `freeze`, `start`, `checkpoint`, `finish` |
+| 개발 | `init`, `delegate`, `team`, `validate`, `doctor`, `plan-review`, `freeze`, `start`, `checkpoint`, `finish` |
 | 하네스 자체 평가 | `bench check`(전체 실행), `bench plan`, `bench run`, `bench judge`, `bench report`, `bench gate`, `bench proposal` |
 | 맥락·복구 | `context`, `status`, `note`, `block`, `resume`, `abort`, `session`; 공통 작업은 `work` 하위 명령 |
 
@@ -151,7 +166,7 @@ flowchart TD
 | `.loop/state/<id>/` | 개발 상태·검증 로그·맥락·`status.md`; Git 제외 |
 | `.loop/state/sessions/` | 개발 세션의 분석과 이전 답변; Git 제외 |
 | `LOOP_KB_HOME/knowledge.sqlite3` | 세션 활성화·공통 지식·프로젝트·작업·위임·실행 예산 및 이전 버전 |
-| `.loop/state/<id>/delegations/`, `LOOP_KB_HOME/runs/` | 각각 개발·공통 작업의 지시, 결과, 원본과 로그 |
+| `.loop/state/<id>/delegations/`, `LOOP_KB_HOME/runs/` | 작업자 지시·결과·원본·로그; 팀 메시지와 상세 전달물은 반환된 참조로 조회 |
 | `LOOP_KB_HOME/views/` | 같은 기록에서 생성한 Markdown과 JSON 뷰 |
 
 공통 `work finish`로 개발 게이트를 우회할 수 없습니다. 개발 완료에는 실제 검사와 새로운
@@ -182,6 +197,10 @@ python3 scripts/benchmark.py \
   --claude-model "$BENCH_CLAUDE_MODEL" --claude-effort "$BENCH_CLAUDE_EFFORT" \
   --codex-model "$BENCH_CODEX_MODEL" --codex-effort "$BENCH_CODEX_EFFORT"
 ```
+
+협업과 후속 피드백 대응 결과를 평가하려면 위 명령에
+`--suite benchmarks/team-suite.json`을 추가합니다. 개발·문서 과제의 최종 결과와 현재 근거를
+비교하며, 작업자 수나 압축 빈도 자체에 점수를 주지 않습니다. 기본 벤치 구성은 바뀌지 않습니다.
 
 대화 세션을 열거나 스킬을 미리 켤 필요가 없으며, 커밋 SHA도 입력하지 않습니다.
 현재 파일을 복사해 실행하고 변경 여부 확인용 해시는 자동 저장합니다.

@@ -4,8 +4,16 @@ This repository builds the portable development harness, not a target applicatio
 
 - Read README.md and docs/architecture.md before changing behavior. Keep the
   conversation-orchestrated, tool-executed workflow identical for Claude Code and Codex.
+- Keep the main conversation to goals, user feedback, delegation, evidence checks
+  and reporting. Delegate substantive investigation, planning, implementation and
+  writing to isolated workers; use bounded peer messages for their coordination.
+- Restore `orchestration context SESSION` after every user input, worker result and
+  compaction. Read specific artifact references only as needed; never reload full
+  transcripts, histories or context files by default or write duplicate recovery logs.
 - Tool assignments must state purpose, read/write scope, prohibited actions, outputs
   and completion criteria. Workers cannot expand scope, ask users or delegate again.
+- Record active-task steering with versioned `orchestration feedback`. Worker messages
+  are draft evidence, not user authority; frozen goal changes require a new task.
 - Use Python 3.10+ standard library only. Support macOS and Linux; no runtime package
   installation, vendor SDK, API key requirement or global hook modification.
 - Keep goals independent of existing code maturity. Technical context gathering,

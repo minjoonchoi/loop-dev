@@ -68,6 +68,16 @@ def parser():
     enabled.add_argument("--session", help="Current conversation's bound ID; omit only for a new conversation")
     for name in ("status", "off"):
         harness_commands.add_parser(name).add_argument("session_id")
+    orchestration = commands.add_parser("orchestration", help="Restore compact parent context and record user feedback")
+    orchestration_commands = orchestration.add_subparsers(dest="orchestration_command", required=True)
+    orchestration_context = orchestration_commands.add_parser("context")
+    orchestration_context.add_argument("session_id")
+    orchestration_context.add_argument("--task")
+    orchestration_context.add_argument("--limit", type=int, choices=range(1, 6), default=5)
+    orchestration_feedback = orchestration_commands.add_parser("feedback")
+    orchestration_feedback.add_argument("session_id")
+    orchestration_feedback.add_argument("--input", type=Path, required=True)
+    orchestration_feedback.add_argument("--expected-control-version", type=int, required=True)
     init = commands.add_parser("init", help="Create a draft goal, without implementing code")
     init.add_argument("goal")
     init.add_argument("--title", required=True)
@@ -89,10 +99,12 @@ def parser():
     checkpoint = commands.add_parser("checkpoint")
     checkpoint.add_argument("goal")
     checkpoint.add_argument("--milestone", required=True)
-    delegate = commands.add_parser("delegate", help="Execute one explicit bounded worker assignment")
-    delegate.add_argument("goal")
-    delegate.add_argument("--input", type=Path, required=True)
-    delegate.add_argument("--recover", help="Reason for retrying an inspected interrupted worker")
+    for name, description in (("delegate", "Execute one explicit bounded worker assignment"),
+                              ("team", "Execute a bounded team of explicit worker assignments")):
+        delegated = commands.add_parser(name, help=description)
+        delegated.add_argument("goal")
+        delegated.add_argument("--input", type=Path, required=True)
+        delegated.add_argument("--recover", help="Reason for retrying an inspected interrupted worker")
     for name in ("block", "abort"):
         sub = commands.add_parser(name)
         sub.add_argument("goal")
@@ -111,11 +123,12 @@ def parser():
     opened.add_argument("--worker", choices=("claude", "codex"), help="Worker provider; defaults to conversation provider")
     opened.add_argument("--path", type=Path, action="append")
     opened.add_argument("--session")
-    delegated = work_commands.add_parser("delegate")
-    delegated.add_argument("task")
-    delegated.add_argument("--input", type=Path, required=True)
-    delegated.add_argument("--path", type=Path)
-    delegated.add_argument("--recover")
+    for name in ("delegate", "team"):
+        delegated = work_commands.add_parser(name)
+        delegated.add_argument("task")
+        delegated.add_argument("--input", type=Path, required=True)
+        delegated.add_argument("--path", type=Path)
+        delegated.add_argument("--recover")
     for name in ("context", "start", "resume"):
         work_commands.add_parser(name).add_argument("task")
     for name in ("goal", "finish"):
@@ -186,8 +199,8 @@ def common_command(args, knowledge):
                 return Engine(root, "goal-" + uuid.uuid4().hex[:12], knowledge).initialize(
                     args.title, args.worker or args.provider, args.session, args.provider)
         return work.open(args.kind, args.title, args.provider, paths, args.session, args.worker)
-    if cmd == "delegate":
-        return work.delegate(args.task, read_json(args.input), args.path, args.recover)
+    if cmd in ("delegate", "team"):
+        return getattr(work, cmd)(args.task, read_json(args.input), args.path, args.recover)
     if cmd == "goal":
         return work.define(args.task, read_json(args.input))
     if cmd == "finish":
@@ -233,6 +246,14 @@ def main(argv=None):
             print(json.dumps(output, ensure_ascii=False, indent=2))
             return 3 if output.get("verdict") == "inconclusive" else 1 if output.get("passed") is False else 0
         knowledge = KnowledgeBase(args.knowledge_home)
+        if args.command == "orchestration":
+            from .orchestration import Orchestration
+            orchestration = Orchestration(knowledge)
+            output = (orchestration.context(args.session_id, args.task, args.limit)
+                      if args.orchestration_command == "context" else
+                      orchestration.feedback(args.session_id, read_json(args.input), args.expected_control_version))
+            print(json.dumps(output, ensure_ascii=False, indent=2))
+            return 0
         if args.command == "harness":
             harness = Harness(knowledge)
             output = (harness.on(args.provider, args.session) if args.harness_command == "on"
@@ -262,8 +283,8 @@ def main(argv=None):
             engine = Engine(root, args.goal, knowledge)
             if cmd == "init":
                 output = engine.initialize(args.title, args.implementer, args.session, args.orchestrator)
-            elif cmd == "delegate":
-                output = engine.delegate(read_json(args.input), args.recover)
+            elif cmd in ("delegate", "team"):
+                output = getattr(engine, cmd)(read_json(args.input), args.recover)
             elif cmd in ("status", "context"):
                 output = engine.refresh()
             elif cmd == "validate":

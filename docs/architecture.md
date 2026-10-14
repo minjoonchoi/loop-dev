@@ -2,9 +2,11 @@
 
 ## Core decision
 
-The user's entry point is a Claude Code or Codex conversation. It orchestrates goal
-setting, scoped assignments, evidence checks, knowledge reconciliation and reporting.
+The user's entry point is a Claude Code or Codex conversation. This main session owns
+goals, user feedback, scoped assignments, evidence checks and reporting.
 Actual analysis, planning, implementation and writing are delegated to bounded workers.
+The main session receives compact role results and artifact references; source analysis,
+full worker output and peer exchanges stay in worker contexts and durable records.
 Portable scripts validate worker results, apply allowed proposals, run deterministic
 gates and persist state. The opposite provider to the implementation worker reviews
 development. Other work has an evidence-backed content/completion check by the
@@ -32,6 +34,8 @@ This is host-agent routing plus persisted state, not a keyword parser or message
 | --- | --- |
 | Shared behavioral policy | `rules/workflow.md`, `delegation.md`, `context.md`, `quality.md` |
 | Bounded delegated work | `delegation.py`: explicit assignment, read-only worker, validated patch application |
+| Worker teams | `team.py`: fixed roles, addressed peer messages, bounded turns and serialized application |
+| Main-session recovery and steering | `orchestration.py`: compact capsules and versioned user feedback |
 | Common goal setting and work | `work.py`, `rules/work.md`; development delegates to existing gates |
 | Cross-project knowledge | `knowledge.py`; local SQLite, scoped records and dependency checks |
 | Readable records and derived views | `writing.py`, `rules/writing.md`; deterministic Markdown, concise authored fields |
@@ -56,8 +60,9 @@ The session's `harness` field records `enabled`, `activated_at` and `updated_at`
 Legacy sessions without this field are inactive. Identical toggles do not create
 repeated history. Changes serialize through a SQLite transaction.
 
-Every new goal/task receives that ID, even the first. Status, shared knowledge context
-and development session context expose current activation from the shared store.
+Every new goal/task receives that ID, even the first. `orchestration context SESSION`
+is the main session's default input after user inputs, worker results and compaction.
+Status and the underlying knowledge/development contexts also expose activation.
 Task completion never toggles it. The host preserves `{session_id, knowledge_home,
 entrypoint}` in conversation/compaction handoffs. The absolute CLI path works after
 moving to an uninstalled directory, using `--root`/`--path` to select the target.
@@ -116,6 +121,54 @@ index and Markdown is derived from the same records. Findings become task-scoped
 drafts, never automatic facts. The orchestrator reconciles evidence before promotion.
 `done` never changes a parent goal to completed; development gates and common content
 checks retain that responsibility.
+
+## Cooperative worker teams
+
+`team GOAL --input FILE [--recover REASON]` and
+`work team TASK --input FILE [--path ROOT] [--recover REASON]` run an orchestrator-owned
+plan through `Team(knowledge, task_id, root).run(plan, recover=None)`. The plan assigns
+fixed roles using the existing assignment schema; `rules/delegation.md` owns its wire
+contract. Each role gets an isolated, ephemeral CLI context on each turn, restored
+from its assignment, selected current context and addressed messages. Roles and scopes
+stay fixed across turns. A worker cannot create roles, redelegate or change the goal.
+
+Workers can return bounded questions, answers and findings to named peers. The
+coordinator validates recipients, scope, answer links and source evidence, persists
+the exchange, and routes it automatically to the addressed worker's next call.
+Messages are draft data, never user instructions or permission to widen a read/write
+scope. Unsupported requests become a blocker rather than implicit reassignment.
+The main session receives compact member results and references to full artifacts,
+so it need not relay or reload every exchange.
+
+The portable implementation serializes worker execution and file application. It
+does not depend on vendor-native real-time chat or concurrent writers. Task-wide call
+and elapsed budgets, per-assignment attempt limits and a finite team turn limit all
+remain in force; recovery cannot reset them. Existing `delegate` remains appropriate
+for a single bounded unit. Team completion does not replace development checkpoints,
+fresh opposite-provider final review or common content/completion checks.
+
+## Compact orchestration and user feedback
+
+`orchestration context SESSION [--task TASK] [--limit 1..5]` produces a recovery capsule
+of at most 16 KiB. It exposes current control state, task/worker summaries, counts and
+artifact references without source, transcript, log or output bodies. Full evidence
+remains on disk and is loaded only to answer a concrete question. The main session
+keeps its binding and the latest capsule; it does not maintain competing handoff files
+or replay the full history after each input. Older detailed context commands remain
+available for targeted investigation, especially inside worker assignments.
+
+User steering is persisted with `orchestration feedback` and an expected control
+version. Immutable feedback IDs make identical retries idempotent; new records reject
+stale versions. The record keeps the original input reference, scope and any explicitly
+superseded feedback. Affected workers receive the current feedback revision and that
+revision is checked before applying their proposals. `rules/context.md` defines the
+feedback fields and recovery steps.
+
+Pause/resume controls apply to the identified task; a progress question is not a
+resume. A scope change blocks the old task and requires a new goal, without editing
+its frozen goal or acceptance. Peer messages and historical summaries cannot create
+user authority. Durable capsules reduce the material loaded by the main session;
+they do not guarantee a host compaction frequency or improved live-model outcomes.
 
 ## Goal versus current code
 
@@ -200,14 +253,16 @@ criterion on the final snapshot. An edit or commit after completion makes `statu
 report `evidence_current: false` and instructs the agent not to claim current completion.
 The old completed record is retained as historical evidence.
 
-## Automatic context loop
+## Detailed context behind the capsule
 
-`context` reconstructs target, original gap analysis, rule paths, source inventory,
-build manifest excerpts, test paths, milestone progress, latest gate and accumulated
+For targeted investigation, `context` reconstructs target, original gap analysis,
+rule paths, source inventory, build manifest excerpts, test paths, milestone progress,
+latest gate and accumulated
 discoveries. Its `next` action routes the active conversation to clarification,
 implementation, final verification, recovery or reporting.
 
-The orchestrator uses this index to assign source analysis and implementation. It
+The main session starts from the compact orchestration capsule, then uses a specific
+reference when an assignment or evidence check needs more detail. It
 inspects returned evidence, adjusts tactics within the frozen target, and passes the accumulated
 notes to the next independent review. Review failures become repair instructions, and
 test failures retain exact commands and log paths. This replaces the user's serial
@@ -231,8 +286,8 @@ There is no undocumented host-session lookup, global pointer or vendor-specific 
 `session.json` contains indexed topic summaries and original evidence, scope/basis
 of decisions, linked goals and the last observation. `context.json` separates reusable
 entries, stale entries with changed dependencies, other-goal entries and historical
-goal records. Goal `context` embeds this view, so it is available before every prompt's
-investigation/clarification. Decisions and execution notes are archived automatically;
+goal records. Goal `context` embeds this detailed view for targeted reads; it is not a
+default main-session prompt. Decisions and execution notes are archived automatically;
 passing preflight/review evidence updates one broad fallback summary per goal. Fresh
 implementation evidence replaces its preflight summary. The agent also persists focused
 topics while investigating, answering decisions and editing to preserve granular reuse.
@@ -375,7 +430,7 @@ no extra model calls, rule rewriting, merge or deployment follow from history up
 
 `bench proposal` stores a bounded rule hypothesis with affected cases, their scores,
 regressions and frozen source/suite hashes. It does not edit rules automatically.
-The orchestrator implements a scoped change and reruns both conditions, calibration
+The orchestrator delegates a scoped change and reruns both conditions, calibration
 and holdout cases under unchanged criteria. Public starter holdouts are regression
 examples; broader claims need representative independently held tasks. Unit CI does
 not run paid providers or substitute for this live quality gate. See `rules/benchmark.md`.

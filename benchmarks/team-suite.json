@@ -1,0 +1,331 @@
+{
+  "version": 1,
+  "id": "team-outcomes-v1",
+  "timeout_seconds": 1200,
+  "max_calls": 60,
+  "policy": {
+    "min_repeats": 3,
+    "quality_margin": 0,
+    "min_quality": 85,
+    "max_duration_ratio": 3,
+    "duration_slack_seconds": 10
+  },
+  "cases": [
+    {
+      "id": "team-expense-flow",
+      "kind": "development",
+      "split": "calibration",
+      "fixture": "fixtures/team-expense-flow",
+      "roots": [
+        "app"
+      ],
+      "turns": [
+        {
+          "root": "app",
+          "prompt": "Complete this small expense-report pipeline using Python's standard library. ledger.load_entries(path) must read a JSON array of rows with category (a nonblank string, preserved verbatim) and amount_minor (an integer, including zero and negative refunds; booleans are invalid). Return the rows in their original order. Invalid JSON, a non-array, or any invalid row must raise ValueError without changing the file. report.summarize(entries, policy) must consume those rows, exclude exactly the categories in policy[\"excluded_categories\"], sum amount_minor per remaining category, and return {\"currency\": policy[\"currency\"], \"totals\": [{\"category\": string, \"amount_minor\": integer}, ...]} sorted by category. An empty input returns empty totals. Neither function may mutate its inputs. expenses.py --entries PATH --policy PATH must wire the reader and summary together, print that JSON result, and exit nonzero on invalid entries without writing any input. Unicode categories must survive. policy.json is user-owned configuration: read it, do not edit it or hardcode its current values. Add and run focused tests. Technical choices within this scope are yours; no publishing is requested."
+        },
+        {
+          "root": "app",
+          "prompt": "policy.json has now changed to EUR with internal excluded. Recheck the delivered pipeline and fix any stale assumption so both the Python API and CLI honor the current file. Keep all original validation, signed integer amounts, Unicode, sorting, empty-input and no-mutation requirements. Feedback on the explanation: report a concrete invocation and its result under the current policy, and distinguish checks actually run from claims. Do not edit policy.json.",
+          "before": {
+            "app/policy.json": "{\"currency\": \"EUR\", \"excluded_categories\": [\"internal\"]}\n"
+          }
+        }
+      ],
+      "artifacts": [
+        "app/ledger.py",
+        "app/report.py",
+        "app/expenses.py"
+      ],
+      "protected": [],
+      "context": [
+        "app/ledger.py",
+        "app/report.py",
+        "app/expenses.py",
+        "app/policy.json"
+      ],
+      "grader": "grade_team.py",
+      "criteria": [
+        {
+          "id": "shared_contract",
+          "mode": "check",
+          "description": "Reader and summary exchange the requested row contract, preserving validation, refunds, ordering, Unicode and input immutability.",
+          "weight": 35,
+          "critical": true,
+          "rule_paths": [
+            "rules/quality.md",
+            "rules/context.md"
+          ]
+        },
+        {
+          "id": "current_constraints",
+          "mode": "check",
+          "description": "The integrated CLI uses current and alternative policies, retains original error behavior and never rewrites input files.",
+          "weight": 35,
+          "critical": true,
+          "rule_paths": [
+            "rules/quality.md",
+            "rules/context.md"
+          ]
+        },
+        {
+          "id": "usable",
+          "mode": "rubric",
+          "weight": 30,
+          "critical": false,
+          "description": "The delivered result is accurate, usable and concise under the final request and source state. Judge the deliverable and explanation; the work method, agent count and internal records earn no credit.",
+          "anchors": [
+            "No usable deliverable or explanation.",
+            "Major contradictions, obsolete guidance or unsupported completion claims make the result misleading.",
+            "Partly useful, but an important original requirement, current source constraint or explanation is missing.",
+            "Accurate and usable under the current constraints, with a small omission or unnecessary recap.",
+            "Complete within scope, internally consistent, concrete and concise; limitations and verification claims match the supplied evidence."
+          ],
+          "rule_paths": [
+            "rules/writing.md",
+            "rules/context.md"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "team-stock-flow",
+      "kind": "development",
+      "split": "holdout",
+      "fixture": "fixtures/team-stock-flow",
+      "roots": [
+        "app"
+      ],
+      "turns": [
+        {
+          "root": "app",
+          "prompt": "Complete the stock-to-shipping pipeline using Python's standard library. stock.read_stock(path) reads a JSON object mapping nonblank SKU strings to nonnegative integer quantities; booleans are invalid. Invalid JSON, other shapes or invalid entries raise ValueError without changing the file. planner.plan(stock, requests, policy) consumes that mapping and an array of {\"sku\": nonblank string, \"quantity\": positive integer} requests; booleans are invalid. Reject invalid requests with ValueError. Combine repeated requests for each exact SKU, sort SKUs, and allocate min(requested, available stock or zero for an unknown SKU, policy[\"max_per_item\"]). Return {\"allocations\": [{\"sku\": string, \"requested\": integer, \"allocated\": integer, \"shortage\": requested-minus-allocated}, ...], \"complete\": boolean}; complete is true exactly when every shortage is zero, including an empty order. Preserve Unicode and do not mutate stock, requests, policy or files. shipping.py --stock PATH --order PATH --policy PATH must connect the two modules and print the result as JSON; invalid stock or requests must exit nonzero. Read policy.json as user-owned configuration without editing it or hardcoding its current value. Add and run focused tests. Technical choices within scope are yours; no publishing is requested."
+        },
+        {
+          "root": "app",
+          "prompt": "The current policy.json now caps each SKU at 2 units. Recheck the API and CLI with this source change. Keep the original contract, especially combining duplicate requests before applying a per-SKU cap, reporting unknown SKUs as shortages, and leaving inventory unchanged. Feedback: use an example with repeated requests and a shortage when reporting the result. Do not edit policy.json.",
+          "before": {
+            "app/policy.json": "{\"max_per_item\": 2}\n"
+          }
+        }
+      ],
+      "artifacts": [
+        "app/stock.py",
+        "app/planner.py",
+        "app/shipping.py"
+      ],
+      "protected": [],
+      "context": [
+        "app/stock.py",
+        "app/planner.py",
+        "app/shipping.py",
+        "app/policy.json"
+      ],
+      "grader": "grade_team.py",
+      "criteria": [
+        {
+          "id": "shared_contract",
+          "mode": "check",
+          "description": "Inventory and planning share the requested contract, validate data, combine repeated requests and preserve all input objects.",
+          "weight": 35,
+          "critical": true,
+          "rule_paths": [
+            "rules/quality.md",
+            "rules/context.md"
+          ]
+        },
+        {
+          "id": "current_constraints",
+          "mode": "check",
+          "description": "The integrated CLI honors the changed per-SKU cap, reports shortages, preserves errors and keeps source files unchanged.",
+          "weight": 35,
+          "critical": true,
+          "rule_paths": [
+            "rules/quality.md",
+            "rules/context.md"
+          ]
+        },
+        {
+          "id": "usable",
+          "mode": "rubric",
+          "weight": 30,
+          "critical": false,
+          "description": "The delivered result is accurate, usable and concise under the final request and source state. Judge the deliverable and explanation; the work method, agent count and internal records earn no credit.",
+          "anchors": [
+            "No usable deliverable or explanation.",
+            "Major contradictions, obsolete guidance or unsupported completion claims make the result misleading.",
+            "Partly useful, but an important original requirement, current source constraint or explanation is missing.",
+            "Accurate and usable under the current constraints, with a small omission or unnecessary recap.",
+            "Complete within scope, internally consistent, concrete and concise; limitations and verification claims match the supplied evidence."
+          ],
+          "rule_paths": [
+            "rules/writing.md",
+            "rules/context.md"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "team-retry-guide",
+      "kind": "document",
+      "split": "calibration",
+      "fixture": "fixtures/team-retry-guide",
+      "roots": [
+        "app"
+      ],
+      "turns": [
+        {
+          "root": "app",
+          "prompt": "Write GUIDE.md and usage.json for the existing retry-decision command by reading client.py, retry.py and settings.json. This is a document task: do not change Python source or settings. Explain Python 3 usage, total attempts versus additional retries, the fixed delay, the limit boundary, and that this command calculates a decision without making a network request or guaranteeing remote success. Include a Markdown fact table with one row per key max_attempts, max_retries, delay_seconds, retry_statuses, performs_network_request; cells in the value column must be JSON literals. usage.json must have {\"facts\": {the same five keys and typed values}, \"examples\": [{\"argv\": [strings], \"expected\": JSON object}, ...]}. Provide exactly four examples: status 503 at attempt 1, status 503 at the configured maximum attempt, status 200 at attempt 1, and status 502 at attempt 1. Each argv starts python3 client.py and explicitly uses --settings settings.json, --status and --attempt. In GUIDE.md put each complete command and its exact JSON output on adjacent lines in a fenced text block, matching usage.json. Keep the explanation short and verify the examples against the actual command."
+        },
+        {
+          "root": "app",
+          "prompt": "settings.json has changed. Refresh both requested documents from the current files; keep all original deliverable and explanation requirements. Feedback: make the maximum-attempt example show the boundary rather than the old limit, and make it clear that an eligible retry decision is not evidence of a successful remote request. Replace outdated facts and examples instead of appending conflicting alternatives. Do not edit any source or settings.",
+          "before": {
+            "app/settings.json": "{\"max_attempts\": 4, \"delay_seconds\": 5, \"retry_statuses\": [429, 502, 503]}\n"
+          }
+        }
+      ],
+      "artifacts": [
+        "app/GUIDE.md",
+        "app/usage.json"
+      ],
+      "protected": [
+        "app/client.py",
+        "app/retry.py"
+      ],
+      "context": [
+        "app/client.py",
+        "app/retry.py",
+        "app/settings.json",
+        "app/GUIDE.md"
+      ],
+      "grader": "grade_team.py",
+      "criteria": [
+        {
+          "id": "current_facts",
+          "mode": "check",
+          "description": "Both deliverables contain consistent typed facts matching the changed settings and the source-defined total-attempt and network behavior.",
+          "weight": 35,
+          "critical": true,
+          "rule_paths": [
+            "rules/quality.md",
+            "rules/context.md"
+          ]
+        },
+        {
+          "id": "executable_examples",
+          "mode": "check",
+          "description": "All four documented commands execute unchanged and match recorded outcomes, including the new boundary and newly eligible status.",
+          "weight": 35,
+          "critical": true,
+          "rule_paths": [
+            "rules/quality.md",
+            "rules/context.md"
+          ]
+        },
+        {
+          "id": "usable",
+          "mode": "rubric",
+          "weight": 30,
+          "critical": false,
+          "description": "The delivered result is accurate, usable and concise under the final request and source state. Judge the deliverable and explanation; the work method, agent count and internal records earn no credit.",
+          "anchors": [
+            "No usable deliverable or explanation.",
+            "Major contradictions, obsolete guidance or unsupported completion claims make the result misleading.",
+            "Partly useful, but an important original requirement, current source constraint or explanation is missing.",
+            "Accurate and usable under the current constraints, with a small omission or unnecessary recap.",
+            "Complete within scope, internally consistent, concrete and concise; limitations and verification claims match the supplied evidence."
+          ],
+          "rule_paths": [
+            "rules/writing.md",
+            "rules/context.md"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "team-export-guide",
+      "kind": "document",
+      "split": "holdout",
+      "fixture": "fixtures/team-export-guide",
+      "roots": [
+        "app"
+      ],
+      "turns": [
+        {
+          "root": "app",
+          "prompt": "Write GUIDE.md and usage.json for the existing CSV exporter by inspecting export.py, formatting.py and settings.json. This is documentation only; do not edit Python source, settings or the sample JSON files. Explain Python 3 usage, configured column order, delimiter, optional header, CSV quoting, empty input, stdout output, unchanged input files and absence of network activity. Include a Markdown fact table with one row per key delimiter, columns, include_header, writes_input, uses_network; value cells must be JSON literals. usage.json must contain {\"facts\": {the same five keys and typed values}, \"examples\": [{\"argv\": [strings], \"expected_stdout\": string}, ...]}. Provide exactly two examples, for demo.json and empty.json, starting python3 export.py with explicit --input and --settings settings.json. In GUIDE.md use one fenced text block per example: a complete command on the first line, followed by its exact CSV stdout, with no added labels or blank output lines (an empty output has just the command line). Match the recorded strings including final newlines. Keep the explanation short and verify the examples against the actual command."
+        },
+        {
+          "root": "app",
+          "prompt": "settings.json now uses a semicolon, columns name then id, and no header. Refresh both documents from the current source. Preserve every original requirement, including quoting the demo name containing the delimiter and showing the empty-input result. Feedback: replace old commands, outputs and facts so a reader sees one consistent current contract; explain that stdout is a preview and input files remain unchanged. Do not modify any source, settings or samples.",
+          "before": {
+            "app/settings.json": "{\"delimiter\": \";\", \"columns\": [\"name\", \"id\"], \"include_header\": false}\n"
+          }
+        }
+      ],
+      "artifacts": [
+        "app/GUIDE.md",
+        "app/usage.json"
+      ],
+      "protected": [
+        "app/export.py",
+        "app/formatting.py",
+        "app/demo.json",
+        "app/empty.json"
+      ],
+      "context": [
+        "app/export.py",
+        "app/formatting.py",
+        "app/settings.json",
+        "app/demo.json",
+        "app/empty.json",
+        "app/GUIDE.md"
+      ],
+      "grader": "grade_team.py",
+      "criteria": [
+        {
+          "id": "current_facts",
+          "mode": "check",
+          "description": "Both deliverables agree on the current delimiter, column order, header setting and source-defined file/network limitations.",
+          "weight": 35,
+          "critical": true,
+          "rule_paths": [
+            "rules/quality.md",
+            "rules/context.md"
+          ]
+        },
+        {
+          "id": "executable_examples",
+          "mode": "check",
+          "description": "Documented commands and recorded stdout reproduce the changed CSV format, Unicode quoting and empty input without modifying samples.",
+          "weight": 35,
+          "critical": true,
+          "rule_paths": [
+            "rules/quality.md",
+            "rules/context.md"
+          ]
+        },
+        {
+          "id": "usable",
+          "mode": "rubric",
+          "weight": 30,
+          "critical": false,
+          "description": "The delivered result is accurate, usable and concise under the final request and source state. Judge the deliverable and explanation; the work method, agent count and internal records earn no credit.",
+          "anchors": [
+            "No usable deliverable or explanation.",
+            "Major contradictions, obsolete guidance or unsupported completion claims make the result misleading.",
+            "Partly useful, but an important original requirement, current source constraint or explanation is missing.",
+            "Accurate and usable under the current constraints, with a small omission or unnecessary recap.",
+            "Complete within scope, internally consistent, concrete and concise; limitations and verification claims match the supplied evidence."
+          ],
+          "rule_paths": [
+            "rules/writing.md",
+            "rules/context.md"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,8 +1,10 @@
 # Common entry: goal setting -> work
 
-This is the shared entry for Claude Code and Codex. The agent owns routing, context
-retrieval, internal commands, recording and updates. The user supplies the requested
-outcome and only human-owned decisions that cannot be established from existing context.
+This is the shared entry for Claude Code and Codex. The main session owns goals,
+user feedback, routing, bounded assignments, evidence checks and reporting. Isolated
+workers perform substantive investigation, planning, implementation and writing.
+The user supplies the requested outcome and only human-owned decisions that cannot
+be established from existing context.
 Apply `writing.md` to status, knowledge and deliverables throughout both stages.
 
 ## Session activation comes first
@@ -12,7 +14,8 @@ The user explicitly invokes the loop-dev skill once (`/loop-dev` in Claude Code,
 absolute entrypoint and knowledge home. Without that activation, ordinary wording
 must not start the harness. Existing low-level CLI operations remain available.
 
-Before EVERY later input, read `harness status SESSION_ID` with the retained binding.
+After EVERY user input, worker result and compaction, read
+`orchestration context SESSION_ID [--task TASK_ID]` with the retained binding.
 If enabled, use this entry for all input, including new unrelated goals and questions.
 Completing a goal, changing directories or task types, and compaction do not turn it
 off. Keep the same ID and knowledge home; use the retained absolute entrypoint with
@@ -30,14 +33,13 @@ Commands below use `.loop/loop.py` as shorthand while at the installed root. Aft
 moving, use `python3 ENTRYPOINT --knowledge-home KNOWLEDGE_HOME --root NEW_ROOT ...`
 with the retained absolute entrypoint; do not look for `.loop` in the new directory.
 
-For a user-requested task pause, stop dispatching work. Save a task-scoped user
-decision with the request as evidence and the boundary "Do not resume this task
-until the user requests it." Use `work block TASK --reason "User paused this task"`
-for unfinished common work, or `block GOAL --reason "User paused this task"` for a
-running development goal. Draft/ready development goals keep their phase and the
-saved pause boundary; do not start them. Status questions and skill reactivation
-never resume a paused task. Only the user's later request to continue permits
-`work resume`/`resume` (or continued preflight for draft/ready goals), within budgets.
+For a user-requested task pause, stop dispatching and save `pause` feedback with the
+original input reference and current control version, following `context.md`.
+Draft/ready development goals keep their phase; do not start them. Status questions
+and skill reactivation never resume a paused task. Only the user's later request to
+continue permits `resume` feedback. Feedback controls dispatch, not task/goal phases:
+use existing `work block`/`block` and `work resume`/`resume` when phase recovery is
+needed, preserving blockers and budgets. Resume feedback does not clear a phase blocker.
 If a worker/gate is already in flight, use host cancellation when available;
 otherwise the synchronous call may finish before the stop can be handled. Inspect
 its logs and any applied paths, preserve actual changes and consumed attempts,
@@ -59,7 +61,9 @@ uses `work abort`/`abort`; a pause is resumable and does not release a running d
 | Ask why work stopped | explain the actual status; continue only already-authorized unfinished work |
 | Pause/stop the task | record the state and honor the boundary; keep harness activation |
 | Turn the harness off | disable this session; preserve unfinished work without continuing it |
-| Acknowledgment or correction | update the current context as needed; do not invent a new task |
+| Constraint or correction | persist scoped, versioned user feedback before the next dispatch |
+| Change the frozen goal/scope | record scope-change feedback; block old execution and create a new goal |
+| Acknowledgment | do not invent a new task or feedback decision |
 
 Explicit user limits take precedence over inferred intent. Do not treat the presence
 of a code path or the word "fix" in an explanatory question as a development request.
@@ -72,7 +76,11 @@ state, expand scope, ask users, delegate further or invoke the entry loop.
 
 The conversation orchestrates. Follow `delegation.md` to delegate actual analysis,
 planning, implementation and writing with explicit scope, deliverables and criteria.
-Read saved state, select current knowledge and inspect outputs before the next handoff.
+Use a single assignment for a small unit or a fixed team for cooperating roles. Team
+workers exchange addressed, bounded messages through the coordinator; do not relay
+their full conversation through the main session. Start from the orchestration capsule,
+select current knowledge and inspect compact results before the next handoff. Open
+specific artifacts only as needed; do not load full histories or write duplicate recaps.
 When the task evaluates or changes the harness itself, also follow `benchmark.md`.
 Benchmark-only analysis is research/review; implementing a rule/runtime change is
 development. Do not impose a benchmark on ordinary project work.
@@ -81,13 +89,14 @@ development. Do not impose a benchmark on ordinary project work.
 
 1. Restore the same conversation's session ID and unfinished task when relevant. For
    a new task, choose its kind and working directory/related project directories.
-2. Read `knowledge context --path /project` (repeat `--path` when the requested task
-   spans projects). Check applicable `reusable` facts and earlier answers before new
+2. Use the capsule's references to find relevant knowledge. When needed, read
+   `knowledge context --path /project` (repeat `--path` for related projects).
+   Check applicable `reusable` facts and earlier answers before new
    investigation. `stale` items need only relevant dependencies checked. Drafts,
    hypotheses, unrelated projects and historical results are not current facts. The
    view has counts and pages; use `--query`/`--offset` before concluding a topic is absent.
-3. Establish outcome, deliverable, scope and completion criteria. Resolve technical
-   questions yourself. Ask only materially unresolved human-owned decisions. Preserve
+3. Establish outcome, deliverable, scope and completion criteria. Delegate unresolved
+   technical questions. Ask only materially unresolved human-owned decisions. Preserve
    an earlier answer's basis and applies_to boundary, including one-time permissions.
 4. If the request and existing knowledge are sufficient, define the goal internally
    and start immediately. Goal setting is not a mandatory questionnaire or approval.
@@ -123,15 +132,20 @@ Development repeats implementation -> actual checks -> independent opposite-prov
 review -> repair under its frozen target and finite budgets. No questions after start.
 
 Documents, explanations, research, review and planning delegate the requested work
-with `work delegate TASK --input ASSIGNMENT [--path ROOT]`, inspect the returned artifact,
-check the output against its criteria, and finish. There is no prescribed iteration
+with `work delegate` or `work team` as specified in `delegation.md`. Inspect the returned
+artifact, check it against its criteria, and finish. There is no prescribed iteration
 count, mandatory cross-review, or requirement to invoke the other provider. Correct
 an actual omission or error when found; do not manufacture a recurring loop.
 No extra questions during work: use the defined decisions or record an actual blocker.
+User feedback received during execution remains part of that task. Record constraints,
+corrections and pause/resume controls through `orchestration feedback` before the next
+dispatch; `context.md` defines the version and scope checks. A changed frozen goal
+requires scope-change feedback and a new task, never a weaker acceptance condition.
 
 Persist newly supported facts/decisions while working with `knowledge remember`,
-using `knowledge.example.json`. Read context before analysis and pass its `revision`
-as `--observed`. After source edits, refresh, inspect affected dependencies and update
+using `knowledge.example.json`. Read the relevant detailed context before analysis
+and pass its `revision` as `--observed`. After source edits, delegate inspection of
+affected dependencies and update
 only the relevant summaries. Knowledge maintenance is ordinary agent work for every
 kind, not a separate instruction the user needs to remember.
 
@@ -145,7 +159,8 @@ Content checks are the active agent's evidence-backed assessment, not independen
 model verification; do not describe them as such.
 
 Every task retains its goal, decisions, notes, result and unsuccessful attempts locally.
-Use `work note`, `work context`, `work block --reason`, `work resume`, or `work abort
+Use the orchestration capsule for recovery, then targeted `work context` or artifact
+references for details. Use `work note`, `work block --reason`, `work resume`, or `work abort
 --reason` as necessary. Goal edits after start need a new task. Common `work finish`
 cannot bypass development gates. A historical completed task is not a fresh pass for
 new code or a new source of publishing/deployment permission.

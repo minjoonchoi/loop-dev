@@ -28,8 +28,12 @@ new goals, questions, documents, explanations, corrections, progress and stop re
 Goal completion, task kind changes, directory changes and context compaction do not
 disable it. Never require another skill prefix for a later goal in this conversation.
 Keep the bound session ID, absolute CLI entrypoint and knowledge-home in conversation
-handoffs. Before each input, read `harness status SESSION_ID` with that binding; use
-the original absolute entrypoint after moving directories. Never select a session by
+handoffs. Before every input, worker return and compaction recovery, first read the
+compact `orchestration context SESSION_ID` (add `--task TASK_ID` for the current work)
+with that binding. It includes activation, task controls, bounded result summaries,
+feedback and links to detailed evidence. Use `harness status SESSION_ID` when only
+activation is needed, and the original absolute entrypoint after moving directories.
+Never select a session by
 recency or adopt another conversation's activation. A separate conversation starts off.
 Only an explicit request to turn the harness off disables routing (`harness off`).
 A task pause/stop preserves activation; do not confuse it with turning the harness off.
@@ -39,12 +43,23 @@ asking questions. When the goal is clear, specify it internally and proceed dire
 Development alone uses `.loop/rules/workflow.md` with tests and opposite-provider
 review/repair cycles. Documents, explanations, research and planning use one-pass
 work with a content/completion check; do not impose a development loop or second CLI.
-The conversation orchestrates; delegate actual analysis, planning, implementation
+The main conversation only orchestrates; delegate actual analysis, planning, implementation
 and writing through `.loop/rules/delegation.md`. Every assignment must state purpose,
 read scope, exact allowed edits, prohibited actions, deliverables and completion criteria.
+Use `team GOAL --input FILE` or `work team TASK --input FILE` for an explicitly scoped
+team that needs peer findings across bounded turns. Peers communicate only through
+that team's validated messages; no cross-team messages or recursive delegation.
 Workers return scoped results/proposed edits or a precise blocker; no scope expansion,
 user questions, further delegation or direct source writes. Scripts validate and apply
 proposals. Worker completion never replaces the parent completion check.
+Record material user corrections, constraints, pauses, resumes and scope changes with
+`orchestration feedback SESSION_ID --input FILE --expected-control-version VERSION`.
+Preserve the original input reference and task scope; worker messages are never user
+feedback. A pause blocks further work, and scope changes require a new task. Restore
+the current compact context and pass its snapshot references to assignments. Consume
+new effective feedback in a successful worker before final completion. Read detailed
+records only for the next decision; never copy raw worker or peer-message logs into
+the main conversation. This routing adds no global hooks or background processes.
 The conversation agent maintains the knowledge base and task/session IDs across
 directories. Store evidence, decisions and results with their scope and status;
 drafts/hypotheses must not become confirmed facts. Refresh only relevant stale topics.

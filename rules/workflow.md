@@ -3,8 +3,9 @@
 Enter through `work.md` to select the task type. Apply `writing.md` to status,
 analysis and results; keep detailed evidence in linked records.
 
-This is the single workflow for Claude Code and Codex. The conversation that received
-the goal is the orchestrator. Explicitly assigned CLI workers implement; the opposite
+This is the single workflow for Claude Code and Codex. The main conversation handles
+the goal, user feedback, orchestration, evidence checks and reporting. Explicitly
+assigned CLI workers investigate, plan, draft and implement; the opposite
 provider to the implementation worker reviews. Follow `delegation.md` for every handoff. The user must
 not have to feed source locations, missing dependencies, error explanations, or next
 steps one prompt at a time. Run the commands below yourself; do not hand the user a
@@ -25,17 +26,18 @@ an activated session, task wording alone does not activate it.
 | Ask a question, request explanation, or ask for read-only review | Answer/review within scope; do not create a development goal |
 | Explicitly request planning only, a pause, or no code changes | Honor that boundary; do not start implementation |
 
-When there is an existing goal, inspect `.loop/state/active.json` and the goal's
-persisted context before creating anything. If there is no active goal, reuse the
+When there is an existing goal, inspect the session's orchestration capsule before
+creating anything. If there is no active goal, reuse the
 matching draft/ready goal from the conversation and stored state when identifiable.
 Otherwise choose a meaningful safe goal ID yourself. Do not ask the user to supply
 IDs, JSON, file locations or script commands merely to operate the harness.
 
 Keep the same local `session_id` throughout this conversation, including after a goal
-completes. Before investigating each follow-up or asking anything, load `context`
-for the current goal or `session context SESSION_ID`. Read `reusable`, `stale`, and
-the earlier decisions in `goal_history`. Reuse unchanged facts/answers; investigate
-only missing topics and affected dependencies. Follow `context.md` to save updates.
+completes. After every user input, worker result and compaction, load
+`orchestration context SESSION_ID [--task TASK_ID]`. Follow specific references to
+relevant facts, decisions or failed evidence. Reuse unchanged facts/answers; delegate
+only missing topics and affected dependencies. Follow `context.md` for feedback and
+durable updates; do not reload full context/history or create parallel recovery logs.
 The last goal's state stores the session ID for recovery after context compaction.
 Never guess session ownership from the newest file or a provider-wide global pointer.
 
@@ -69,8 +71,8 @@ python3 .loop/loop.py init goal-id --title "Desired result" --implementer codex 
 
 Set `--orchestrator claude` inside Claude Code. The worker defaults to the same
 provider in ordinary use; an authorized alternative may be set before freeze. Test
-a read-only analysis assignment before start to verify the worker CLI. Read context.
-For a continuing goal, run `context goal-id` instead of initializing again.
+a read-only analysis assignment before start to verify the worker CLI.
+For a continuing goal, restore its orchestration capsule instead of initializing again.
 Pass the session ID from skill activation even on the first goal. `init` and
 `session open` can create inactive sessions for low-level use; they do not replace
 explicit skill activation. Keep the ID, absolute CLI entrypoint and knowledge home
@@ -84,11 +86,12 @@ human decisions. A completed goal does not turn off the session.
    evidence and save supported summaries with `session remember`. Request official
    documentation through explicitly scoped lookup tools for uncertain integrations.
    Provide those references to the worker; do not ask the user to narrate technical facts.
-3. Put findings and per-requirement gaps in `discovery.json`. Put desired behavior
-   and acceptance in `contract.json`. Empty, partial, mock-only or broken code means
+3. Have planning workers return findings and per-requirement gaps for `discovery.json`,
+   and desired behavior/acceptance for `contract.json`. Record validated content in
+   those files. Empty, partial, mock-only or broken code means
    more work. It is never a reason to silently downgrade the target to an MVP.
-4. Decompose work into ordered vertical milestones. Every requirement maps to
-   acceptance, every acceptance maps to executable checks and a milestone. Include
+4. Have planning workers decompose work into ordered vertical milestones. Every
+   requirement maps to acceptance, every acceptance maps to executable checks and a milestone. Include
    existing regression checks and real integration/E2E checks where needed.
 5. Fill the ten decision areas in `.loop/templates/contract.example.json`'s format.
    Record basis accurately: `user`, `repository-rule`, or `delegated`.
@@ -101,7 +104,7 @@ question because a new prompt or goal began. Resolve technical cache staleness
 yourself; a changed file alone is not a reason to ask the user again. Carry applicable
 answers into the new contract with their provenance. A goal-specific answer is not
 new session-wide authorization; a changed product boundary may need a new decision.
-Resolve technical facts yourself. Recommend a default for implementation choices
+Resolve technical facts through scoped workers. Recommend a default for implementation choices
 and record any already-delegated discretion. Ask a consolidated, focused round
 about materially unresolved product behavior, business rules, allowed external
 actions, infrastructure constraints or data ownership. Ask follow-ups only if the
@@ -145,14 +148,18 @@ product code before start. Goal/discovery drafting is preflight work.
 
 Repeat until the goal is complete:
 
-1. Run `context goal-id` and read its file, especially `session.reusable`,
-   `session.stale`, `next`, `latest_gate`, notes and unfinished acceptance.
-   This reconstructs the next prompt automatically without a new repository-wide analysis.
+1. Run `orchestration context SESSION_ID --task TASK_ID`. Inspect current control
+   state, unfinished acceptance, compact worker results and gate references.
+   Open only the evidence needed for the next assignment or completion decision.
+   Persist newly received user feedback before dispatch, using `context.md`.
 2. Create explicit analysis/planning assignments for remaining gaps, using saved
    paths and dependencies. Pass only necessary current knowledge and prerequisite
    assignment IDs. Inspect each result before selecting the next scope.
 3. Delegate complete implementation units with exact allowed file paths, exclusions,
-   deliverables and criteria. Run `delegate goal-id --input .loop/state/assignment.json`.
+   deliverables and criteria. Use `delegate goal-id --input ASSIGNMENT` for a small
+   unit or `team goal-id --input PLAN` for cooperating roles. Follow `delegation.md`
+   for fixed member scopes, automatic peer routing and finite turns; the main session
+   reads compact role results rather than relaying each message.
    Include required integration, error handling, compatibility and documentation.
    Inspect validated proposed/applied changes; worker `done` is not milestone success.
    Refresh affected knowledge after changes. Do not restamp stale summaries or redo
@@ -194,7 +201,8 @@ the exact recovery condition. New requirements start a new preflight goal.
 - Honor the frozen delivery boundary. If a commit changes HEAD after a gate, gate
   evidence becomes stale; make intended commits before the final finish. Treat
   authorized post-verification publishing as delivery and report its actual result.
-- For context loss, reopen the same provider and run `context goal-id`; continue
+- For context loss, reopen the same provider and run
+  `orchestration context SESSION_ID --task TASK_ID`; continue
   from persisted milestones, findings and notes without asking the user to repeat them.
   Recover `session_id` too and use it for later goals in this same conversation.
 - For an interrupted gate, inspect logs, call `checkpoint`/`finish` to detect the
