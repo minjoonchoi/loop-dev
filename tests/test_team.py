@@ -10,7 +10,7 @@ from loop_dev import providers
 from loop_dev.orchestration import Orchestration, worker_context
 from loop_dev.storage import LoopError, locked, read_json, write_json
 from loop_dev.team import Team
-from support import FAKE_CLI, ProjectTest
+from support import FAKE_CLI, ProjectTest, complete_fixture_team
 from test_delegation import assignment
 
 
@@ -62,8 +62,25 @@ TEAM_BRANCH = '''if "WORKER DATA:\\n" in prompt:
 '''
 
 
-def plan(*names, max_turns=12, team_id="inspect-team"):
-    return {"id": team_id, "members": [{"assignment": assignment(name)} for name in names], "max_turns": max_turns}
+def plan(*names, max_turns=12, team_id="inspect-team", goal_criteria=("A1",)):
+    # These are separate observable contributions, not identical work renamed
+    # into more agents. Small single units use delegate in runtime tests.
+    roles = [
+        ("source definition", ["value.py"], "Identify the exported value and its definition."),
+        ("consumer behavior", ["value.py", "check.py"], "Trace the value read by the consumer."),
+        ("assertion coverage", ["check.py"], "Explain which consumer outcome the existing assertion verifies."),
+        ("public contract", ["value.py", "check.py"], "Describe the public import contract used by the consumer."),
+        ("compatibility check", ["value.py", "check.py"], "Identify how a changed exported value affects compatibility."),
+        ("evidence index", ["value.py", "check.py"], "List the source locations that substantiate the value behavior.")]
+    members = []
+    for name, (role, reads, contribution) in zip(names, roles):
+        request = assignment(name, goal_criteria=goal_criteria)
+        request.update(instruction=contribution, read_paths=reads,
+                       deliverables=[{"id": "explanation", "description": contribution}],
+                       criteria=[{"id": "C1", "description": "Provide source-backed " + role + "."}])
+        request["planning"]["rationale"] = "This unit owns the " + role + " contribution."
+        members.append({"assignment": request})
+    return {"id": team_id, "members": members, "max_turns": max_turns}
 
 
 class TeamTests(ProjectTest):
@@ -74,6 +91,9 @@ class TeamTests(ProjectTest):
         self.kb = self.engine.knowledge
         self.task_id = self.engine.refresh()["work_id"]
         self.team = Team(self.kb, self.task_id, self.root)
+
+    def complete(self, request, recover=None):
+        return complete_fixture_team(self.team, request, recover)
 
     def packet(self, member):
         record = self.team.assignment(member)
@@ -93,7 +113,7 @@ class TeamTests(ProjectTest):
     def test_real_question_answer_followup_is_automatic_and_addressed(self):
         request = plan("alpha", "beta", "gamma")
         with patch.dict(os.environ, {"LOOP_TEAM_MODE": "exchange"}):
-            result = self.team.run(request)
+            result = self.complete(request)
         self.assertTrue(result["passed"], result)
         self.assertEqual(result["turns"], 4)
         self.assertEqual(self.kb.get("worker-budget", self.task_id)["calls"], 4)
@@ -111,12 +131,12 @@ class TeamTests(ProjectTest):
 
     def test_normal_team_reuses_completed_result_and_context_is_compact(self):
         request = plan("one", "two", "three", "four", "five", "six")
-        result = self.team.run(request)
+        result = self.complete(request)
         self.assertTrue(result["passed"], result)
         self.assertEqual(result["member_count"], 6)
         self.assertEqual(len(result["members"]), 5)
         self.assertTrue(Path(result["artifact"]).is_file())
-        again = Team(self.kb, self.task_id, self.root).run(request)
+        again = complete_fixture_team(Team(self.kb, self.task_id, self.root), request)
         self.assertTrue(again["passed"])
         self.assertEqual(again["turns"], 6)
         self.assertEqual(again["task_worker_calls"], 6)
@@ -129,7 +149,7 @@ class TeamTests(ProjectTest):
             write_json(contract_path, contract)
             self.engine.refresh()
             name = "inspect-" + provider
-            result = self.team.run(plan(name, team_id="team-" + provider))
+            result = self.complete(plan(name, name + "-consumer", team_id="team-" + provider))
             self.assertTrue(result["passed"], result)
             record = self.team.assignment(name)
             argv = read_json(Path(record["directory"]) / "process.json")["argv"]
@@ -141,7 +161,7 @@ class TeamTests(ProjectTest):
     def test_dependency_order_and_cycle_missing_dependency_reject_before_call(self):
         request = plan("beta", "alpha")
         request["members"][0]["assignment"]["depends_on"] = ["alpha"]
-        result = self.team.run(request)
+        result = self.complete(request)
         self.assertTrue(result["passed"], result)
         self.assertEqual(self.team.assignment("alpha")["team_turn"], 1)
         self.assertEqual(self.team.assignment("beta")["team_turn"], 2)
@@ -149,55 +169,58 @@ class TeamTests(ProjectTest):
         cyclic["members"][0]["assignment"]["depends_on"] = ["cycle-b"]
         cyclic["members"][1]["assignment"]["depends_on"] = ["cycle-a"]
         with self.assertRaisesRegex(LoopError, "cycle"):
-            self.team.run(cyclic)
-        missing = plan("missing", team_id="missing")
+            self.complete(cyclic)
+        missing = plan("missing", "missing-consumer", team_id="missing")
         missing["members"][0]["assignment"]["depends_on"] = ["unknown"]
         with self.assertRaisesRegex(LoopError, "missing"):
-            self.team.run(missing)
+            self.complete(missing)
         self.assertEqual(self.kb.get("worker-budget", self.task_id)["calls"], 2)
 
     def test_recipient_and_answer_spoofing_fail_without_delivery(self):
         with patch.dict(os.environ, {"LOOP_TEAM_MODE": "unknown"}):
-            result = self.team.run(plan("alpha", "beta", team_id="unknown"))
+            result = self.complete(plan("alpha", "beta", team_id="unknown"))
         self.assertFalse(result["passed"])
         self.assertEqual(self.ledger("unknown")["messages"], [])
-        self.assertEqual(self.team.assignment("alpha")["status"], "failed")
+        self.assertEqual(self.team.assignment("alpha")["status"], "candidate")
+        self.assertTrue(self.team.assignment("alpha")["validation_errors"])
         # Exercise forged reply in a fresh assignment namespace.
         request = plan("sender", "beta", team_id="forged")
         with patch.dict(os.environ, {"LOOP_TEAM_MODE": "spoof"}):
-            result = self.team.run(request)
+            result = self.complete(request)
         self.assertFalse(result["passed"])
-        self.assertIn("delivered question", result["error"])
+        self.assertIn("delivered question", " ".join(self.team.assignment("sender")["validation_errors"]))
+        self.assertEqual(self.ledger("forged")["messages"], [])
 
     def test_lock_rejection_does_not_create_an_interrupted_worker(self):
-        request = plan("alpha", max_turns=1)
+        request = plan("alpha", "beta", max_turns=2)
         with locked(self.kb.home / "task-locks" / self.task_id):
-            blocked = self.team.run(request)
+            blocked = self.complete(request)
         self.assertFalse(blocked["passed"])
         self.assertEqual(blocked["turns"], 0)
         self.assertEqual(blocked["task_worker_calls"], 0)
         self.assertIsNone(self.ledger()["inflight"])
-        self.assertTrue(self.team.run(request)["passed"])
+        self.assertTrue(self.complete(request)["passed"])
 
     def test_waiting_cannot_apply_edits_or_expand_scope(self):
         self.running()
         request = plan("alpha", "beta")
         request["members"][0]["assignment"] = assignment("alpha", "implementation", ["value.py"])
         with patch.dict(os.environ, {"LOOP_TEAM_MODE": "waiting-edit", "LOOP_TEAM_EDITS": json.dumps({"alpha": {"value.py": "VALUE = 2\n"}})}):
-            result = self.team.run(request)
+            result = self.complete(request)
         self.assertFalse(result["passed"])
         self.assertEqual((self.root / "value.py").read_text(), "VALUE = 1\n")
-        self.assertIn("Waiting", result["error"])
-        invalid = plan("invalid", team_id="invalid")
+        self.assertIn("Waiting", " ".join(self.team.assignment("alpha")["validation_errors"]))
+        self.assertEqual(self.ledger()["messages"], [])
+        invalid = plan("invalid", "invalid-consumer", team_id="invalid")
         invalid["members"][0]["assignment"] = assignment("invalid", "implementation", ["AGENTS.md"])
         with self.assertRaisesRegex(LoopError, "instructions"):
-            self.team.run(invalid)
+            self.complete(invalid)
 
     def test_turn_limit_and_shared_task_budget_never_reset(self):
         request = plan("alpha", "beta", max_turns=2)
         with patch.dict(os.environ, {"LOOP_TEAM_MODE": "cycle"}):
-            result = self.team.run(request)
-            again = self.team.run(request, recover="Inspected all turns; no process remains")
+            result = self.complete(request)
+            again = self.complete(request, recover="Inspected all turns; no process remains")
         self.assertFalse(result["passed"])
         self.assertIn("turn budget", result["error"])
         self.assertEqual(again["turns"], 2)
@@ -205,20 +228,20 @@ class TeamTests(ProjectTest):
         altered = copy.deepcopy(request)
         altered["max_turns"] = 3
         with self.assertRaisesRegex(LoopError, "immutable"):
-            self.team.run(altered)
+            self.complete(altered)
         path = self.engine.goal_dir / "contract.json"
         contract = read_json(path)
         contract["execution"]["max_worker_calls"] = 2
         write_json(path, contract)
         self.engine.refresh()
-        blocked = self.team.run(plan("new-member", team_id="new-team"))
+        blocked = self.complete(plan("new-member", "new-consumer", team_id="new-team"))
         self.assertFalse(blocked["passed"])
         self.assertIn("budget exhausted", blocked["error"])
         self.assertEqual(blocked["task_worker_calls"], 2)
 
     def test_source_drift_rejects_worker_and_preserves_external_edit(self):
         with patch.dict(os.environ, {"LOOP_TEAM_MUTATE": "1"}):
-            result = self.team.run(plan("alpha", "beta"))
+            result = self.complete(plan("alpha", "beta"))
         self.assertFalse(result["passed"])
         self.assertFalse(result["evidence_current"])
         self.assertEqual((self.root / "value.py").read_text(), "VALUE = 9\n")
@@ -228,7 +251,7 @@ class TeamTests(ProjectTest):
         original_input = Path(self.temp.name) / "request.txt"
         original_input.write_text("Keep the assigned interface compatible.\n")
         self.feedback("input", reference=str(original_input))
-        result = self.team.run(plan("alpha"))
+        result = self.complete(plan("alpha", "beta"))
         self.assertTrue(result["passed"], result)
         packet = self.packet("alpha")
         self.assertEqual(packet["feedback_input_files"], [str(original_input)])
@@ -236,12 +259,12 @@ class TeamTests(ProjectTest):
         self.assertEqual(self.team.assignment("alpha")["feedback_substantive_revision"], worker_context(self.kb, self.task_id)["substantive_revision"])
         original_input.write_text("A different instruction.\n")
         with self.assertRaisesRegex(LoopError, "Original feedback evidence"):
-            self.team.run(plan("beta", team_id="new-team"))
-        self.assertEqual(self.kb.get("worker-budget", self.task_id)["calls"], 1)
+            self.complete(plan("new-source", "new-consumer", team_id="new-team"))
+        self.assertEqual(self.kb.get("worker-budget", self.task_id)["calls"], 2)
 
     def test_feedback_during_worker_prevents_apply_and_pause_resume_refreshes_scoped_turn(self):
         self.running()
-        request = plan("alpha")
+        request = plan("alpha", "beta")
         request["members"][0]["assignment"] = assignment("alpha", "implementation", ["value.py"])
         original = providers.structured_call
 
@@ -252,15 +275,15 @@ class TeamTests(ProjectTest):
 
         with patch.dict(os.environ, {"LOOP_TEAM_EDITS": json.dumps({"alpha": {"value.py": "VALUE = 2\n"}})}):
             with patch("loop_dev.providers.structured_call", side_effect=pause_after_call):
-                blocked = self.team.run(request)
+                blocked = self.complete(request)
             self.assertFalse(blocked["passed"])
             self.assertIn("paused", blocked["error"])
             self.assertEqual((self.root / "value.py").read_text(), "VALUE = 1\n")
             self.feedback("resume", "resume")
-            result = self.team.run(request, recover="Inspected the paused worker; no process remains")
+            result = self.complete(request, recover="Inspected the paused worker; no process remains")
         self.assertTrue(result["passed"], result)
-        self.assertEqual(result["turns"], 2)
-        self.assertEqual(result["task_worker_calls"], 2)
+        self.assertEqual(result["turns"], 3)
+        self.assertEqual(result["task_worker_calls"], 3)
         self.assertEqual(self.ledger()["epoch"], 1)
         self.assertEqual((self.root / "value.py").read_text(), "VALUE = 2\n")
         self.assertEqual(self.state()["phase"], "running")
@@ -276,11 +299,11 @@ class TeamTests(ProjectTest):
 
         with patch.dict(os.environ, {"LOOP_TEAM_MODE": "exchange"}):
             with patch.object(self.team, "accept", side_effect=steer_after_waiting):
-                blocked = self.team.run(request)
+                blocked = self.complete(request)
             self.assertFalse(blocked["passed"])
             self.assertEqual(blocked["task_worker_calls"], 1)
             old_message = self.ledger()["messages"][0]["id"]
-            result = self.team.run(request, recover="Inspected feedback and retained the same assignment scope")
+            result = self.complete(request, recover="Inspected feedback and retained the same assignment scope")
         self.assertTrue(result["passed"], result)
         self.assertEqual(result["turns"], 4)
         self.assertEqual(result["task_worker_calls"], 4)
@@ -291,24 +314,24 @@ class TeamTests(ProjectTest):
         self.assertEqual(len(self.ledger()["messages"]), 3)
 
     def test_scope_change_cannot_be_cleared_by_team_recovery(self):
-        request = plan("alpha")
+        request = plan("alpha", "beta")
         self.feedback("scope", "scope_change")
         self.feedback("resume", "resume")
         with self.assertRaisesRegex(LoopError, "Scope changed"):
-            self.team.run(request, recover="No process remains")
+            self.complete(request, recover="No process remains")
         self.assertIsNone(self.kb.get("worker-budget", self.task_id, required=False))
 
     def test_interruption_requires_inspection_and_retains_both_counters(self):
-        request = plan("alpha")
+        request = plan("alpha", "beta")
         with patch("loop_dev.providers.structured_call", side_effect=KeyboardInterrupt):
             with self.assertRaises(KeyboardInterrupt):
-                self.team.run(request)
+                self.complete(request)
         with self.assertRaisesRegex(LoopError, "--recover"):
-            self.team.run(request)
-        result = Team(self.kb, self.task_id, self.root).run(request, recover="Inspected worker logs; no process remains")
+            self.complete(request)
+        result = complete_fixture_team(Team(self.kb, self.task_id, self.root), request, recover="Inspected worker logs; no process remains")
         self.assertTrue(result["passed"], result)
-        self.assertEqual(result["turns"], 2)
-        self.assertEqual(result["task_worker_calls"], 2)
+        self.assertEqual(result["turns"], 3)
+        self.assertEqual(result["task_worker_calls"], 3)
         self.assertEqual(self.team.assignment("alpha")["attempts"], 2)
 
     def test_recovery_imports_completed_turn_without_reexecution_or_duplicate_message(self):
@@ -316,8 +339,8 @@ class TeamTests(ProjectTest):
         with patch.dict(os.environ, {"LOOP_TEAM_MODE": "exchange"}):
             with patch.object(self.team, "accept", side_effect=KeyboardInterrupt):
                 with self.assertRaises(KeyboardInterrupt):
-                    self.team.run(request)
-            result = Team(self.kb, self.task_id, self.root).run(request, recover="Inspected completed worker and stopped processes")
+                    self.complete(request)
+            result = complete_fixture_team(Team(self.kb, self.task_id, self.root), request, recover="Inspected completed worker and stopped processes")
         self.assertTrue(result["passed"], result)
         self.assertEqual(result["turns"], 3)
         self.assertEqual(result["task_worker_calls"], 3)
@@ -327,8 +350,8 @@ class TeamTests(ProjectTest):
         request = plan("alpha", "beta", "gamma")
         original = providers.structured_call
 
-        def run(provider, root, directory, prompt, *args):
-            value = original(provider, root, directory, prompt, *args)
+        def run(provider, root, directory, prompt, *args, **kwargs):
+            value = original(provider, root, directory, prompt, *args, **kwargs)
             data = json.loads(prompt.split("WORKER DATA:\n", 1)[1])
             if data["assignment"]["id"] == "alpha":
                 value["messages"] = [{"to": "gamma", "kind": "finding", "reply_to": "", "summary": "The source value is one.", "evidence": ["value.py:1"]}]
@@ -339,7 +362,7 @@ class TeamTests(ProjectTest):
         # beta is a prerequisite of gamma, so its write occurs before delivery.
         request["members"][2]["assignment"]["depends_on"] = ["beta"]
         with patch("loop_dev.providers.structured_call", side_effect=run), patch.dict(os.environ, {"LOOP_TEAM_EDITS": json.dumps({"beta": {"value.py": "VALUE = 2\n"}})}):
-            result = self.team.run(request)
+            result = self.complete(request)
         self.assertFalse(result["passed"])
         self.assertIn("peer answer or finding is stale", result["error"])
         self.assertIsNone(self.team.assignment("gamma"))

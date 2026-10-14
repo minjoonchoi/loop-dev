@@ -17,6 +17,11 @@ def obj(properties):
 
 
 STRING = {"type": "string"}
+
+
+class InvalidResult(LoopError):
+    """A completed call produced unusable output, not a transport/authority failure."""
+
 REVIEW_SCHEMA = obj({
     "verdict": {"type": "string", "enum": ["pass", "revise", "blocked"]},
     "summary": STRING,
@@ -58,7 +63,12 @@ def command(provider, root, directory, schema=None, outside_git=False, model=Non
                 "exec", *(["--model", model] if model else []), *effort_args(provider, effort), *(["--skip-git-repo-check"] if outside_git else []), "--ephemeral", "--output-schema", str(schema_path),
                 "--output-last-message", str(directory / "answer.json"), "-"]
     if provider == "claude":
-        return [executable, "-p", *(["--model", model] if model else []), *effort_args(provider, effort), "--output-format", "json", "--json-schema",
+        # An explicit same-model fallback overrides a persisted availability
+        # chain without guessing an undocumented empty/disable flag. These are
+        # session-only choices; managed provider policies remain authoritative.
+        selection = (["--model", model, "--fallback-model", model] if model else [])
+        return [executable, "-p", *selection, *effort_args(provider, effort),
+                "--settings", '{"switchModelsOnFlag":false}', "--output-format", "json", "--json-schema",
                 json.dumps(schema or REVIEW_SCHEMA, separators=(",", ":")),
                 "--permission-mode", "dontAsk", "--tools", "Read,Glob,Grep",
                 "--allowedTools", "Read,Glob,Grep", "--disallowedTools", "AskUserQuestion,mcp__*",
@@ -129,19 +139,26 @@ def structured_call(provider, root, directory, prompt, timeout, schema, outside_
     if result["exit_code"] != 0 or result["timed_out"]:
         raise LoopError(f"{provider} call failed; inspect {directory / 'stderr.log'}")
     source = directory / ("answer.json" if provider == "codex" else "stdout.log")
-    if not source.exists() or source.stat().st_size > 1024 * 1024:
-        raise LoopError("Missing or oversized worker/reviewer result")
-    value = read_json(source)
+    if not source.exists():
+        raise LoopError("Missing worker/reviewer result; inspect provider execution")
+    if source.stat().st_size > 1024 * 1024:
+        raise InvalidResult("Oversized worker/reviewer result")
+    try:
+        value = json.loads(source.read_text(encoding="utf-8"))
+    except (ValueError, UnicodeError) as exc:
+        raise InvalidResult("Worker/reviewer returned malformed JSON") from exc
     if provider == "claude":
-        if not isinstance(value, dict) or value.get("is_error") or value.get("permission_denials"):
+        if isinstance(value, dict) and (value.get("is_error") or value.get("permission_denials")):
             raise LoopError("Claude call failed or reported denied permissions")
+        if not isinstance(value, dict) or "structured_output" not in value:
+            raise InvalidResult("Claude returned an invalid structured-output envelope")
         value = value.get("structured_output")
     return value
 
 
-def review(provider, root, directory, prompt, timeout, expected_ids, phase):
-    value = structured_call(provider, root, directory, prompt, timeout, REVIEW_SCHEMA)
+def review(provider, root, directory, prompt, timeout, expected_ids, phase, model=None, effort=None):
+    value = structured_call(provider, root, directory, prompt, timeout, REVIEW_SCHEMA, model=model, effort=effort)
     passed = validate_review(value, expected_ids, phase)
     write_json(directory / "review.json", value)
-    return {"provider": provider, "passed": passed, "result": value,
+    return {"provider": provider, "model": model, "effort": effort, "passed": passed, "result": value,
             "artifact": str(directory / "review.json")}

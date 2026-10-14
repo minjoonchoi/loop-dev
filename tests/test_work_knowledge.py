@@ -13,6 +13,7 @@ from loop_dev.knowledge import KnowledgeBase
 from loop_dev.storage import LoopError, digest
 from loop_dev.work import Work
 from scripts.install import install
+from support import use_fake_routing
 
 
 class KnowledgeTests(unittest.TestCase):
@@ -20,6 +21,7 @@ class KnowledgeTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.base = Path(self.temp.name)
+        use_fake_routing(self, self.base)
         self.root = self.base / "docs"
         self.root.mkdir()
         (self.root / "guide.md").write_text("The cache stores file dependencies.\n")

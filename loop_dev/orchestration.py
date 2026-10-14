@@ -271,6 +271,23 @@ class Orchestration:
         for field in ("result", "feedback_revision", "feedback_substantive_revision"):
             if record.get(field):
                 value[field + "_ref" if field == "result" else field] = record[field]
+        profile = record.get("profile")
+        if isinstance(profile, dict):
+            value["profile"] = {key: profile[key] for key in ("id", "provider", "model", "effort") if key in profile}
+        for field in ("candidate_id", "result_digest", "before", "after"):
+            if record.get(field):
+                value[field] = record[field]
+        selection = _small_text(record.get("selection_reason"))
+        if selection:
+            value["selection_reason"] = selection
+        assessment = record.get("assessment")
+        if isinstance(assessment, dict):
+            value["assessment"] = {key: assessment[key] for key in ("verdict", "reason") if key in assessment}
+            value["assessment"]["ref"] = value["record_ref"] + "#/assessment"
+        if record.get("status") == "candidate":
+            value["next"] = "Inspect the staged result and evidence; submit an internal accept/reject assessment. No changes are applied yet."
+        elif record.get("status") == "rejected":
+            value["next"] = "Retry the same assignment or team; the router selects a stronger eligible profile within the remaining budget."
         return value
 
     def _current(self, task, locations, view):
@@ -355,7 +372,7 @@ class Orchestration:
             locations = {x["id"]: x for x in _records(db, "location")}
             visible_ids = {task_id} if task_id else {x["id"] for x in tasks if x.get("phase") not in ("completed", "aborted")}
             workers = [x for x in _records(db, "delegation") if x["task_id"] in visible_ids]
-            workers.sort(key=lambda x: (x.get("status") in ("running", "interrupted"),
+            workers.sort(key=lambda x: (x.get("status") in ("candidate", "rejected", "running", "interrupted"),
                                         x.get("started_at", ""), x["id"]), reverse=True)
             task_views = [self._task_preview(x) for x in tasks]
             worker_views = [self._worker_preview(x) for x in workers]
@@ -393,10 +410,15 @@ class Orchestration:
                 capsule["feedback_revision"] = view["revision"]
                 capsule["next"] = (view["block_reason"] if view["blocked"] else
                     {"goal_setting": "Define the goal and completion criteria from current decisions before starting.",
-                     "working": "Dispatch the next scoped assignment with current feedback, then inspect its result.",
+                     "working": "Assess any staged candidate against its goal before continuing; dispatch or retry scoped assignments with current feedback.",
                      "blocked": "Inspect the recorded blocker and recover only within existing authority.",
                      "completed": "Report the recorded result; refresh development evidence before claiming current completion.",
                      "aborted": "Report the stopped task; do not dispatch new work for it."}.get(selected.get("phase"), "Inspect the linked authoritative task state."))
+                pending = [worker for worker in workers if worker.get("status") in ("candidate", "rejected")]
+                if pending and not view["blocked"] and selected.get("phase") not in ("completed", "aborted", "blocked"):
+                    capsule["next"] = ("Inspect candidate artifacts and submit assess with source-backed checks before applying work."
+                                       if any(worker["status"] == "candidate" for worker in pending) else
+                                       "Retry the rejected assignment or team unchanged; only that assignment is escalated within its remaining budget.")
                 if selected.get("phase") == "completed":
                     current = capsule["current"]
                     stale = (view["blocked"] or current.get("completion", {}).get("freshness", "").startswith("stale")

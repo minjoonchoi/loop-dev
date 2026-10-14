@@ -75,7 +75,8 @@ class ReportTests(unittest.TestCase):
                     row = {'id': sample, 'case': case['id'], 'provider': 'codex', 'repeat': repeat, 'arm': arm,
                            'status': 'completed', 'activation_valid': True, 'protected_valid': True, 'seconds': 10,
                            'errors': [], 'checks': {'correct': {'passed': True, 'evidence': 'Observed value matches source.'}},
-                           'usage': {'provider_calls': 1, 'calls_complete': True, 'total_cost_usd': None}, 'packet_hash': digest(packet),
+                           'usage': {'provider_calls': 1, 'calls_complete': True, 'total_cost_usd': None}, 'routing_valid': True,
+                           'packet_hash': digest(packet),
                            'workspace_hash': digest(bench.directory_files(trial / 'workspace')),
                            'evidence': {'packet.json': file_hash(trial / 'packet.json')}}
                     self.rows.append(row)

@@ -132,10 +132,25 @@ def write_report(root, spec, value=None, failure=None):
             if row['status'] != 'regression':
                 row['status'] = 'inconclusive'
     items = recommendations(spec, value, failure)
+    actual = {}
+    for sample in value.get('samples', []):
+        for row in sample['usage'].get('profile_calls', []):
+            key = (sample['provider'], sample['arm'], row['provider'], row['model'], row['effort'])
+            target = actual.setdefault(key, {'conversation_provider': key[0], 'arm': key[1],
+                'provider': key[2], 'model': key[3], 'effort': key[4], 'calls': 0,
+                'failed_calls': 0, 'unfinished_calls': 0})
+            for name in ('calls', 'failed_calls', 'unfinished_calls'):
+                target[name] = (target[name] + row[name]
+                                if type(target[name]) is int and type(row.get(name)) is int else None)
     result = {'verdict': verdict, 'passed': not failure and value.get('passed', False),
         'manifest_hash': value.get('manifest_hash'), 'failure': failure,
         'arms': list(arms),
         'profiles': {p: {'model': spec['models'][p], 'effort': spec.get('efforts', {}).get(p)} for p in ('claude', 'codex')},
+        'routing': spec.get('routing'), 'actual_profile_usage': list(actual.values()),
+        'worker_outcomes': [{'sample': sample['id'], 'arm': sample['arm'], 'provider': sample['provider'],
+                            **sample['usage'].get('worker_outcomes', {'retry_calls': None,
+                                 'rejected_attempts': None, 'escalated_calls': None})}
+                            for sample in value.get('samples', [])],
         'evaluation': spec.get('evaluation') or value.get('reviewer'),
         'goal_types': sorted({goal_type(c) for c in spec['suite']['cases']}),
         'comparisons': groups, 'type_outcomes': outcomes, 'improvements': items,
@@ -143,6 +158,7 @@ def write_report(root, spec, value=None, failure=None):
         'missing': value.get('missing', []), 'scope': value.get('scope'),
         'limits': ['같은 이름의 effort가 두 제공자에서 같은 연산량을 뜻하지 않습니다.',
                    '모델 설정은 요청값입니다. 지원 여부는 CLI가 검증하며 자동 대체하지 않습니다.',
+                   '실패·폐기·재시도 호출도 사용량에 포함합니다. 미측정 비용이나 확인되지 않은 폐기·상향 횟수는 추정하지 않습니다.',
                    '유형별 평균과 제공자 간 비교는 기술 통계입니다. 개별 사례의 퇴행을 상쇄하지 않습니다.']}
     write_json(root / 'improvements.json', result)
     display = lambda x: '미측정' if x is None else str(x)
@@ -150,6 +166,9 @@ def write_report(root, spec, value=None, failure=None):
         '| 제공자 | 모델 | effort |', '| --- | --- | --- |']
     for provider, profile in result['profiles'].items():
         lines.append(f"| {provider} | {plain(profile['model'])} | {display(profile['effort'])} |")
+    if result['routing']:
+        lines.extend(['', '라우팅: **' + result['routing']['mode'] + '** · 고정한 카탈로그: `' +
+                      result['routing']['hash'] + '`. 위 표는 메인 대화 설정이며, 중첩 CLI에 요청한 설정은 아래에 따로 집계합니다.'])
     evaluation = result['evaluation']
     if evaluation:
         lines.extend(['', '공통 평가자: ' + plain(' / '.join(str(evaluation.get(k, '미지정')) for k in ('provider', 'model', 'effort', 'repeats')))])
@@ -179,6 +198,17 @@ def write_report(root, spec, value=None, failure=None):
     for row in outcomes:
         deltas = ' | '.join(display(row['quality_delta'][control]) for control in controls)
         lines.append(f"| {row['goal_type']} / {row['provider']} | {row['completed']} / {row['expected']} | {row['status']} | {deltas} |")
+    if result['actual_profile_usage']:
+        lines.extend(['', '## CLI 모델 요청별 호출', '',
+            '| 메인 / 비교군 | 호출 제공자 | 모델 / effort | 호출 | 실패 | 미완료 |',
+            '| --- | --- | --- | --- | --- | --- |'])
+        for row in result['actual_profile_usage']:
+            lines.append(f"| {row['conversation_provider']} / {ARM_LABELS[row['arm']]} | {row['provider']} | "
+                f"{plain(row['model'])} / {display(row['effort'])} | {display(row['calls'])} | "
+                f"{display(row['failed_calls'])} | {display(row['unfinished_calls'])} |")
+        lines.extend(['', '모델·effort는 CLI 요청값입니다. 백엔드의 실제 적용값으로 간주하지 않습니다. '
+                      '호출 실패는 CLI 종료·응답 오류입니다. 작업 결과의 폐기 판정과 다릅니다. '
+                      '근거가 있는 작업 재시도·폐기·상향 횟수는 improvements.json의 worker_outcomes에 보존합니다.'])
     lines.extend(['', '## 개선 우선순위', ''])
     if not items:
         lines.append('관측된 퇴행이 없어 규칙 변경을 제안하지 않습니다. 이 결과만으로 일반적인 품질 우위를 주장할 수 없습니다.')

@@ -11,7 +11,77 @@ from unittest.mock import patch
 
 from loop_dev.contract import AREAS
 from loop_dev.engine import Engine
-from loop_dev.storage import head, read_json, write_json
+from loop_dev.storage import file_hash, head, read_json, write_json
+
+
+def fake_routing_policy():
+    """Explicit fake model choices; these IDs make no claim about account access."""
+    return {"version": 1, "requirements": {"low": 1, "medium": 2, "high": 3},
+            "profiles": [{"id": provider + "-" + effort, "provider": provider,
+                          "model": "fake-" + provider + ("-large" if rank == 3 else "-small"),
+                          "effort": effort, "capability_rank": rank, "cost_rank": rank}
+                         for provider in ("claude", "codex")
+                         for rank, effort in enumerate(("low", "medium", "high"), 1)]}
+
+
+def use_fake_routing(test, directory):
+    path = Path(directory) / "routing-test.json"
+    write_json(path, fake_routing_policy())
+    environment = patch.dict(os.environ, {"LOOP_ROUTING_PROFILE": str(path)})
+    environment.start()
+    test.addCleanup(environment.stop)
+    return path
+
+
+def fixture_assessment(knowledge, result):
+    """Act as the main assessor only for deterministic legacy-test fixtures.
+
+    Runtime code never accepts a candidate automatically. These tests already
+    specify the expected fake output; retain the artifact hash as evidence of
+    the concrete candidate being examined, including valid peer questions.
+    """
+    brief = result["assignment"]
+    record = knowledge.get("delegation", brief["id"])
+    value = read_json(Path(brief["result"]))
+    if record.get("validation_errors"):
+        raise AssertionError("Cannot accept an invalid fixture candidate: " + str(record["validation_errors"]))
+    if value["status"] not in ("done", "waiting"):
+        raise AssertionError("Fixture is not an acceptable result or bounded peer question")
+    evidence = [{"ref": str(Path(brief["result"]).resolve()), "sha256": file_hash(Path(brief["result"]))}]
+    source = next((Path(record["root"]) / name for name in record["request"]["read_paths"]
+                   if (Path(record["root"]) / name).is_file()), None)
+    if source is None:
+        raise AssertionError("A fixture acceptance needs source evidence outside the worker's own result")
+    source.read_bytes()
+    evidence.append({"ref": str(source.resolve()), "sha256": file_hash(source)})
+    criteria = [("assignment", item["id"]) for item in record["request"]["criteria"]]
+    criteria += [("goal", key) for key in record["request"]["planning"]["goal_criteria"]]
+    return {"assignment_id": brief["assignment_id"], "candidate_id": brief["candidate_id"],
+            "result_digest": brief["result_digest"], "verdict": "accept", "reason": "accepted",
+            "summary": "The deterministic fixture satisfies this scoped contribution.",
+            "checks": [{"scope": scope, "criterion_id": key, "satisfied": True, "evidence": evidence}
+                       for scope, key in criteria]}
+
+
+def accept_fixture(knowledge, assess, result):
+    if result.get("assignment", {}).get("status") != "candidate":
+        return result
+    return assess(fixture_assessment(knowledge, result))
+
+
+def complete_fixture_team(team, plan, recover=None):
+    """Drive explicitly accepted fake turns without replacing production routing."""
+    result = team.run(plan, recover)
+    for _ in range(plan["max_turns"] + 1):
+        if result["status"] != "awaiting_assessment":
+            return result
+        ledger = team.load(plan["id"])
+        record = team.assignment(ledger["inflight"]["member"])
+        if record.get("validation_errors"):
+            return result
+        team.worker.assess(fixture_assessment(team.knowledge, team.worker.response(record)))
+        result = team.run(plan)
+    raise AssertionError("Fixture assessor exceeded the immutable team turn budget")
 
 
 FAKE_CLI = '''#!/usr/bin/env python3
@@ -60,6 +130,7 @@ class ProjectTest(unittest.TestCase):
         self.root.mkdir()
         self.bin = Path(self.temp.name) / "bin"
         self.bin.mkdir()
+        use_fake_routing(self, Path(self.temp.name))
         for name in ("codex", "claude"):
             path = self.bin / name
             path.write_text(FAKE_CLI)

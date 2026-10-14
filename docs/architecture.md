@@ -7,7 +7,8 @@ goals, user feedback, scoped assignments, evidence checks and reporting.
 Actual analysis, planning, implementation and writing are delegated to bounded workers.
 The main session receives compact role results and artifact references; source analysis,
 full worker output and peer exchanges stay in worker contexts and durable records.
-Portable scripts validate worker results, apply allowed proposals, run deterministic
+Portable scripts select explicit economical profiles, stage worker candidates,
+apply only assessed proposals, run deterministic
 gates and persist state. The opposite provider to the implementation worker reviews
 development. Other work has an evidence-backed content/completion check by the
 orchestrator without a mandatory loop. There is no SDK, API-key requirement or daemon.
@@ -34,6 +35,7 @@ This is host-agent routing plus persisted state, not a keyword parser or message
 | --- | --- |
 | Shared behavioral policy | `rules/workflow.md`, `delegation.md`, `context.md`, `quality.md` |
 | Bounded delegated work | `delegation.py`: explicit assignment, read-only worker, validated patch application |
+| Work decomposition and profile selection | `routing.py`, `rules/routing.md`: goal-linked units, evidenced demand and bounded escalation |
 | Worker teams | `team.py`: fixed roles, addressed peer messages, bounded turns and serialized application |
 | Main-session recovery and steering | `orchestration.py`: compact capsules and versioned user feedback |
 | Common goal setting and work | `work.py`, `rules/work.md`; development delegates to existing gates |
@@ -83,7 +85,9 @@ frozen development evidence and dependent knowledge. Workers cannot edit `.agent
 `delegate GOAL` and `work delegate TASK` run one explicit assignment from a JSON input.
 The same protocol is used for both providers: instruction, read paths, exact write
 paths, prohibitions, named deliverables, completion criteria, selected knowledge IDs
-and prerequisite assignment IDs. A common task with multiple roots must select one
+and prerequisite assignment IDs. Its `planning` records parent criterion IDs, boundary
+rationale, verification and complexity/risk/uncertainty with supporting evidence.
+`rules/routing.md` owns this schema. A common task with multiple roots must select one
 root per invocation. Worker status is distinct from parent goal status.
 
 Workers receive only selected current knowledge and fresh prerequisite outputs, plus
@@ -94,13 +98,25 @@ cannot recursively invoke the harness, ask users, redelegate or change rules/sta
 Missing scope or information returns a precise blocker to the orchestrator.
 
 Both CLI transports are read-only. Proposed edits are complete UTF-8 file contents
-or deletions with original hashes. All proposals are checked before the first edit:
+or deletions with original hashes. A result first becomes a `candidate`; it cannot
+edit source, become prerequisite output, promote findings or relay peer messages.
+The main session reads the candidate and current goal/criterion evidence, then calls
+`assess GOAL` or `work assess TASK`. This is an internal decision, without a user
+approval checkpoint or a compulsory second model judge. Each accepted check needs
+hash-pinned evidence outside the candidate attempt directory; self-report is insufficient.
+The runtime checks identity, digests and freshness; the main session judges meaning.
+
+Acceptance rechecks all proposals before the first edit:
 exact allowed paths, no wildcards/traversal/symlinks, no instruction/provider/state
 edits, no ignored write targets, matching hashes and unchanged parent/source state.
 The applier records originals, preserves modes and uses atomic replacement per file.
 After apply it checks for unexpected source, branch, rule or parent changes. File
 operations are not a multi-file transaction: a filesystem error can leave partial
 edits, which remain recorded with originals. Nothing resets or cleans user changes.
+Rejection quarantines the whole candidate and preserves audit evidence. The next
+same-ID dispatch selects a stronger allowed profile and receives a bounded failure
+reason, without adopting rejected content as facts. Repeating a pending candidate
+returns its references without spending another worker call.
 
 Assignment IDs are immutable and bound to a working location. Repeating a completed
 request reuses it only with the same parent, source and selected handoff evidence.
@@ -115,26 +131,51 @@ in a task. At most three attempts per ID, default 40 calls per task, and per-cal
 preflight clarification does not consume working elapsed time. Recovery of an
 interrupted call requires inspection and an explicit recovery reason.
 
-Every attempt retains its prompt, schema, process logs and available result/originals.
+Every attempt retains its profile, prompt, schema, process logs and available result/originals.
 SQLite records current assignments and prior versions; context includes a compact
 index and Markdown is derived from the same records. Findings become task-scoped
-drafts, never automatic facts. The orchestrator reconciles evidence before promotion.
+drafts only after acceptance, never automatic facts. The orchestrator reconciles evidence before promotion.
 `done` never changes a parent goal to completed; development gates and common content
 checks retain that responsibility.
+
+## Economical profile selection
+
+Goal setting freezes `execution.routing`; an optional `LOOP_ROUTING_PROFILE` imports
+the policy before the seal. Profiles declare provider, concrete model, explicit effort,
+relative capability and cost ranks. Dispatch never falls back to CLI defaults or
+rereads a changed environment. Missing support or configuration blocks honestly.
+
+The highest requirement from assignment complexity, risk and uncertainty sets the
+capability floor. The runtime selects the least costly eligible profile within the
+task's worker provider, using capability rank and profile ID as deterministic ties.
+Higher initial demand needs factual evidence. A cohesive small task stays one unit;
+teams require distinct verifiable contributions, acyclic dependencies and one writer
+per file. Schema checks do not establish that a split is useful; the main session does.
+
+A recorded quality rejection permits a strictly higher capability and different
+model/effort on the same provider, retaining all budgets. Authentication, permission,
+timeouts, stale input and ambiguous scope are blockers, not escalation evidence.
+Development review stays on the opposite provider with a least-cost suitable profile:
+medium by default, high only for evidenced high risk/uncertainty. Missing eligibility
+does not lower the review requirement. Ranks are configuration, not measured cost or
+capability; requested settings are recorded without claiming a host honored uncapped effort.
 
 ## Cooperative worker teams
 
 `team GOAL --input FILE [--recover REASON]` and
 `work team TASK --input FILE [--path ROOT] [--recover REASON]` run an orchestrator-owned
 plan through `Team(knowledge, task_id, root).run(plan, recover=None)`. The plan assigns
-fixed roles using the existing assignment schema; `rules/delegation.md` owns its wire
+2–12 distinct contributions using the assignment schema; `rules/delegation.md` owns its wire
 contract. Each role gets an isolated, ephemeral CLI context on each turn, restored
 from its assignment, selected current context and addressed messages. Roles and scopes
 stay fixed across turns. A worker cannot create roles, redelegate or change the goal.
 
 Workers can return bounded questions, answers and findings to named peers. The
-coordinator validates recipients, scope, answer links and source evidence, persists
-the exchange, and routes it automatically to the addressed worker's next call.
+coordinator validates recipients, scope, answer links and source evidence. It returns
+`awaiting_assessment` with the current candidate. Only accepted messages enter the
+peer inbox. After internal assessment, the main session repeats the same team command
+to continue; no user prompt or recovery flag is needed for this normal boundary.
+The coordinator routes the exchange to the addressed worker's next call.
 Messages are draft data, never user instructions or permission to widen a read/write
 scope. Unsupported requests become a blocker rather than implicit reassignment.
 The main session receives compact member results and references to full artifacts,
@@ -150,7 +191,8 @@ fresh opposite-provider final review or common content/completion checks.
 ## Compact orchestration and user feedback
 
 `orchestration context SESSION [--task TASK] [--limit 1..5]` produces a recovery capsule
-of at most 16 KiB. It exposes current control state, task/worker summaries, counts and
+of at most 16 KiB. It exposes current control state, task/worker summaries, selected
+profiles and candidate/assessment references, counts and
 artifact references without source, transcript, log or output bodies. Full evidence
 remains on disk and is loaded only to answer a concrete question. The main session
 keeps its binding and the latest capsule; it does not maintain competing handoff files
@@ -182,6 +224,27 @@ The preflight decision areas are scope, architecture, data, interface, dependenc
 security, verification, operations, delivery and autonomy. The model may resolve
 technical facts through investigation and choices within existing delegated authority.
 It asks the user only about material decisions that cannot be established this way.
+
+Artifact discovery follows the requested result: requirements may lead to a PRD,
+a PRD to a detailed plan/mockup, those artifacts to frontend or backend code, and
+backend API evidence to frontend integration. Backend specs and whole-system
+architecture can also be independent creation/refresh goals. These are selectable
+work shapes, not an obligatory seven-stage pipeline. `rules/context.md` defines the
+input/consumer checks. The main session uses scoped knowledge and delegated source
+inspection to recover existing context, reconcile contradictions and carry user
+feedback into the needed outputs. It asks only unresolved human-owned choices before
+execution instead of asking the user to narrate discoverable context again.
+
+Cross-project handoffs retain project/location identity and source evidence. Derived
+knowledge lists its actual source dependencies so changes can mark it stale. The
+orchestrator identifies and refreshes affected documents/code within authorized scope;
+the runtime does not infer a semantic artifact graph or silently rewrite consumers.
+Current code evidence measures implementation gaps and does not replace the desired
+product outcome or override an applicable user decision.
+Detailed knowledge/development contexts provide a bounded `sources` index from observed
+paths and fingerprints, ranked with task title/goal hints. It reads no artifact bodies
+and covers only selected locations. Hints are navigation, not validated artifact roles
+or an exhaustive search; the assigned worker must inspect their meaning and currentness.
 
 ## Common work and knowledge
 
@@ -373,6 +436,12 @@ or read. The source snapshot includes uncommitted changes and is hashed automati
 profiles and budgets match. Trial-local CLI wrappers enforce model IDs and efforts and reserve
 a shared call budget for the conversation and its nested workers/reviewers. Existing
 host policy and authentication remain in effect. No SDK or global hook is installed.
+By default each provider has one pinned model/effort pair. Optional `--routing-profile`
+freezes the same allowed pool for both arms, including both pinned root pairs; nested
+calls may select only an allowed pair. The independently fixed judge is unchanged.
+Both arms receive the policy before goal sealing. Mode/policy changes start a separate
+temporal baseline. Per-pair call/failure counts are observable; rejection/escalation
+needs linked attempt/assessment evidence, and configured ranks do not establish billing.
 The suite must contain at least two distinct goal types. Session reuse is a scenario
 dimension; the starter session case counts as explanation, alongside development and document.
 

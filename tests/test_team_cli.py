@@ -10,9 +10,11 @@ from loop_dev import providers
 from loop_dev.orchestration import Orchestration, worker_context
 from loop_dev.storage import LoopError, locked, read_json, write_json
 from loop_dev.work import Work
+from loop_dev.team import Team
 from scripts.install import install
-from support import FAKE_CLI, ProjectTest
+from support import FAKE_CLI, ProjectTest, accept_fixture, fixture_assessment
 from test_delegation import WORKER_BRANCH, assignment
+from test_team import plan as team_plan
 
 
 SOURCE = Path(__file__).resolve().parents[1]
@@ -36,17 +38,36 @@ class TeamIntegrationTests(ProjectTest):
         result = subprocess.run([sys.executable, str(entry or SOURCE / "scripts/loop.py"),
                                  "--knowledge-home", str(self.kb.home), "--root", str(root or self.root), *map(str, args)],
                                 cwd=Path(self.temp.name), capture_output=True, text=True)
-        self.assertEqual(result.returncode, code, result.stderr or result.stdout)
-        return json.loads(result.stdout if code in (0, 1) else result.stderr)
+        if code is None:
+            self.assertIn(result.returncode, (0, 1), result.stderr or result.stdout)
+        else:
+            self.assertEqual(result.returncode, code, result.stderr or result.stdout)
+        return json.loads(result.stdout if code in (0, 1, None) else result.stderr)
 
     def input(self, name, value):
         path = Path(self.temp.name) / (name + ".json")
         write_json(path, value)
         return path
 
-    def plan(self, name="value-team"):
-        return {"id": name, "members": [{"assignment": assignment("inspect-a")},
-                                         {"assignment": assignment("inspect-b")}], "max_turns": 4}
+    def plan(self, name="value-team", goal_criteria=("A1",)):
+        return team_plan("inspect-a", "inspect-b", team_id=name, max_turns=4, goal_criteria=goal_criteria)
+
+    def complete_cli_team(self, *args, entry=None, root=None, task_id=None):
+        """Use the installed CLI for every explicit fixture assessment and resume."""
+        for _ in range(6):
+            result = self.cli(*args, entry=entry, root=root, code=None)
+            if result["status"] != "awaiting_assessment":
+                return result
+            ledger = read_json(Path(result["artifact"]))
+            team = Team(self.kb, result["task_id"], root or self.root)
+            record = team.assignment(ledger["inflight"]["member"])
+            payload = self.input(record["candidate_id"], fixture_assessment(self.kb, team.worker.response(record)))
+            if task_id:
+                self.cli("work", "assess", task_id, "--input", payload, "--path", root,
+                         entry=entry, root=root)
+            else:
+                self.cli("assess", "demo", "--input", payload, entry=entry, root=root)
+        self.fail("The fixture team exceeded its immutable turn budget")
 
     def feedback(self, kind, name, task_id=None, session_id=None, supersedes=()):
         session_id = session_id or self.session_id
@@ -83,7 +104,7 @@ class TeamIntegrationTests(ProjectTest):
         with locked(self.root):
             error = self.cli("team", "demo", "--input", plan, entry=entry, code=2)
         self.assertIn("Another loop command", error["error"])
-        result = self.cli("team", "demo", "--input", plan, entry=entry)
+        result = self.complete_cli_team("team", "demo", "--input", plan, entry=entry)
         self.assertTrue(result["passed"], result)
         self.assertEqual(result["member_count"], 2)
         self.assertEqual(self.state()["phase"], "draft")
@@ -99,14 +120,15 @@ class TeamIntegrationTests(ProjectTest):
         install(self.root)
         entry = self.root / ".loop/loop.py"
         work, task, root = self.common_task()
-        plan = self.input("common-team", self.plan("document-team"))
+        plan = self.input("common-team", self.plan("document-team", ("C1",)))
         with locked(self.kb.home / "task-locks" / task["id"]):
             error = self.cli("work", "team", task["id"], "--input", plan, "--path", root,
                              entry=entry, root=root, code=1)
         self.assertIn("Another loop command", error["error"])
         self.assertEqual(error["task_worker_calls"], 0)
         self.assertEqual(error["turns"], 0)
-        result = self.cli("work", "team", task["id"], "--input", plan, "--path", root, entry=entry, root=root)
+        result = self.complete_cli_team("work", "team", task["id"], "--input", plan, "--path", root,
+                                        entry=entry, root=root, task_id=task["id"])
         self.assertTrue(result["passed"], result)
         self.assertEqual(work.load(task["id"])["phase"], "working")
         context = self.cli("orchestration", "context", self.session_id, "--task", task["id"], "--limit", 1,
@@ -149,7 +171,7 @@ class TeamIntegrationTests(ProjectTest):
         self.feedback("correction", "cite-consumer")
         with self.assertRaisesRegex(LoopError, "successful worker"):
             self.engine.gate()
-        worker = self.engine.delegate(assignment("consume-correction"))
+        worker = accept_fixture(self.kb, self.engine.assess, self.engine.delegate(assignment("consume-correction")))
         self.assertTrue(worker["passed"], worker)
         self.feedback("pause", "temporary-pause")
         self.feedback("resume", "continue-value")
@@ -215,7 +237,8 @@ class TeamIntegrationTests(ProjectTest):
         self.feedback("constraint", "cite-value", task["id"])
         with self.assertRaisesRegex(LoopError, "successful worker"):
             work.finish(task["id"], self.result())
-        self.assertTrue(work.delegate(task["id"], assignment("consume-common"))["passed"])
+        delegated = work.delegate(task["id"], assignment("consume-common", goal_criteria=("C1",)))
+        self.assertTrue(accept_fixture(self.kb, lambda payload: work.assess(task["id"], payload), delegated)["passed"])
         self.assertTrue(work.finish(task["id"], self.result())["passed"])
 
     def test_common_start_and_resume_cannot_bypass_task_controls(self):
@@ -249,7 +272,8 @@ class TeamIntegrationTests(ProjectTest):
     def test_tampered_worker_result_cannot_acknowledge_feedback(self):
         work, task, _ = self.common_task()
         self.feedback("correction", "actual-evidence", task["id"])
-        delegated = work.delegate(task["id"], assignment("consume-evidence"))
+        delegated = work.delegate(task["id"], assignment("consume-evidence", goal_criteria=("C1",)))
+        delegated = accept_fixture(self.kb, lambda payload: work.assess(task["id"], payload), delegated)
         self.assertTrue(delegated["passed"], delegated)
         path = Path(delegated["assignment"]["result"])
         value = read_json(path)

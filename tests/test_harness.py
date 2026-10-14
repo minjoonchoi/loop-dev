@@ -14,7 +14,7 @@ from loop_dev.knowledge import KnowledgeBase
 from loop_dev.storage import HARNESS_SKILL_FILES, LoopError, read_json, rule_manifest
 from loop_dev.work import Work
 from scripts import install as installer
-from support import ProjectTest
+from support import ProjectTest, use_fake_routing
 
 
 SOURCE = Path(__file__).resolve().parents[1]
@@ -25,6 +25,7 @@ class ConversationTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.base = Path(self.temp.name).resolve()
+        use_fake_routing(self, self.base)
         self.root = self.base / 'documents'
         self.root.mkdir()
         self.kb = KnowledgeBase(self.base / 'knowledge')

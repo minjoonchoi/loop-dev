@@ -67,6 +67,9 @@ uses `work abort`/`abort`; a pause is resumable and does not release a running d
 
 Explicit user limits take precedence over inferred intent. Do not treat the presence
 of a code path or the word "fix" in an explanatory question as a development request.
+Classify an HTML mockup by its requested purpose: a planning/review artifact can be
+document work; implementing executable behavior requires development gates. A mixed
+planning-and-implementation goal does not lose those checks because it includes documents.
 This is semantic routing by the conversation model, not a substring parser or host hook.
 Progress questions and steering during active work belong to the existing task;
 answer them and continue its authorized scope without opening duplicate explanation tasks.
@@ -74,10 +77,11 @@ An explicitly assigned worker or independent reviewer is exempt from orchestrati
 execute only the supplied assignment and return its schema. Do not write task/knowledge
 state, expand scope, ask users, delegate further or invoke the entry loop.
 
-The conversation orchestrates. Follow `delegation.md` to delegate actual analysis,
-planning, implementation and writing with explicit scope, deliverables and criteria.
-Use a single assignment for a small unit or a fixed team for cooperating roles. Team
-workers exchange addressed, bounded messages through the coordinator; do not relay
+The conversation orchestrates. Follow `routing.md` to define goal-linked units and
+select economical explicit profiles, then `delegation.md` to execute and assess them.
+Use one assignment for a small complete unit; split a team only into distinct,
+independently verifiable contributions with dependencies and one writer per file. Team
+workers exchange accepted, bounded messages through the coordinator; do not relay
 their full conversation through the main session. Start from the orchestration capsule,
 select current knowledge and inspect compact results before the next handoff. Open
 specific artifacts only as needed; do not load full histories or write duplicate recaps.
@@ -98,8 +102,16 @@ development. Do not impose a benchmark on ordinary project work.
 3. Establish outcome, deliverable, scope and completion criteria. Delegate unresolved
    technical questions. Ask only materially unresolved human-owned decisions. Preserve
    an earlier answer's basis and applies_to boundary, including one-time permissions.
+   Follow `context.md` to discover the relevant requirements, PRD, plans, mockups, API
+   and architecture inputs across known project locations. Reconcile missing/stale or
+   conflicting artifacts before execution; do not require the user to paste context
+   that scoped investigation can recover or force unrelated workflow stages.
 4. If the request and existing knowledge are sufficient, define the goal internally
    and start immediately. Goal setting is not a mandatory questionnaire or approval.
+5. Configure the available model/effort pool in `execution.routing` before sealing
+   the goal; an optional `LOOP_ROUTING_PROFILE` imports it during goal setting. Use
+   existing authorized choices and verify provider support. Missing configuration
+   blocks dispatch; no implicit CLI setting or later environment fallback is used.
 
 For development, run `init ... --implementer WORKER --orchestrator CONVERSATION --session SESSION` and
 follow `workflow.md`. `work open --kind development` also creates a development goal.
@@ -132,10 +144,14 @@ Development repeats implementation -> actual checks -> independent opposite-prov
 review -> repair under its frozen target and finite budgets. No questions after start.
 
 Documents, explanations, research, review and planning delegate the requested work
-with `work delegate` or `work team` as specified in `delegation.md`. Inspect the returned
-artifact, check it against its criteria, and finish. There is no prescribed iteration
-count, mandatory cross-review, or requirement to invoke the other provider. Correct
-an actual omission or error when found; do not manufacture a recurring loop.
+with `work delegate` or `work team` as specified in `delegation.md`. These stage a
+candidate; inspect its goal/criterion evidence and call `work assess` internally.
+Acceptance releases its effects. Rejection discards the whole candidate and the next
+same-ID dispatch selects a stronger allowed profile within existing budgets. Continue
+the same team until its accepted work is complete, then finish. This adds no user
+approval and no mandatory second model judge. There is no prescribed iteration count,
+cross-review or requirement to invoke the other provider. Correct actual errors;
+do not manufacture a recurring loop for successful small work.
 No extra questions during work: use the defined decisions or record an actual blocker.
 User feedback received during execution remains part of that task. Record constraints,
 corrections and pause/resume controls through `orchestration feedback` before the next

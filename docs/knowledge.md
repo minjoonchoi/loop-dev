@@ -19,7 +19,7 @@
 
 스킬을 명시적으로 시작하면 로컬 세션에 활성화 상태를 저장합니다. 이후 모든 입력을 같은
 목표 설정 → 작업 흐름으로 처리하며 작업 완료·새 목표·경로 이동·맥락 압축으로 꺼지지 않습니다.
-매 입력 전에 에이전트가 `harness status SESSION_ID`를 확인합니다. `knowledge context`에도
+매 입력·작업 결과·맥락 압축 뒤에 에이전트가 `orchestration context SESSION_ID`부터 확인합니다. `knowledge context`에도
 현재 `harness` 상태가 포함됩니다. 세션 ID, 지식 저장소, 실행 파일 절대 경로를 함께 유지합니다.
 최초 활성화는 `harness on --provider codex`, 같은 대화의 재활성화는 `--session SESSION_ID`를
 추가하며, 명시적 해제는 `harness off SESSION_ID`입니다. 이 명령들은 Git 없이도 동작합니다.
@@ -32,19 +32,22 @@ python3 .loop/loop.py work open --kind explanation --title "저장 방식 설명
 python3 .loop/loop.py work goal WORK_ID --input /temporary/goal.json
 python3 .loop/loop.py work start WORK_ID
 python3 .loop/loop.py work delegate WORK_ID --input /temporary/assignment.json --path /project
+python3 .loop/loop.py work assess WORK_ID --input /temporary/assessment.json --path /project
 python3 .loop/loop.py work finish WORK_ID --input /temporary/result.json
 ```
 
 스킬 활성화에서 받은 `--session SESSION_ID`를 첫 작업부터 사용합니다. 여러 디렉터리는 `--path`를 반복합니다.
 `--provider`는 대화, 선택적인 `--worker`는 작업 CLI이며 생략하면 같은 공급자를 씁니다.
 위임은 [위임 규칙](../rules/delegation.md)의 필드를 모두 채웁니다. 여러 경로에 연결된 작업은
-위임할 때 한 경로를 명시해야 합니다. 도구 결과를 확인한 후 전체 완료 조건을 기록합니다.
+위임할 때 한 경로를 명시해야 합니다. 위 순서는 후보를 내부 검토해 채택한 경우입니다.
+폐기하면 같은 위임을 더 높은 허용 프로필로 재실행합니다. 팀도 후보 검토 후 같은 계획으로
+이어 실행합니다. 사용자에게 평가 JSON이나 다음 프롬프트를 요구하지 않습니다.
 유형은 `document`, `explanation`, `research`, `review`, `planning`입니다.
 `development`는 기존 개발 엔진에 위임하므로 `work finish`로 완료할 수 없습니다.
 
 | 입력 | 필드 |
 | --- | --- |
-| 목표 | `outcome`, `deliverable`, `criteria[{id, description}]`, `decisions`, `open_questions`, 선택적 `execution` |
+| 목표 | `outcome`, `deliverable`, `criteria[{id, description}]`, `decisions`, `open_questions`, `execution.routing`과 선택적 실행 한도 |
 | 결과 | `summary`, `outputs`, `checks[{criterion_id, satisfied, evidence}]`, 선택적 `knowledge` |
 | 결정 | `answer`, `basis`, `applies_to`, 원래 답변의 `evidence` |
 
@@ -55,8 +58,12 @@ python3 .loop/loop.py work finish WORK_ID --input /temporary/result.json
 
 `execution`의 기본 한도는 `max_worker_calls: 40`, `worker_timeout_seconds: 600`,
 `max_run_seconds: 14400`입니다. 작업 시작 뒤에는 고정되며 새 위임 ID나 재개로 초기화하지 않습니다.
+에이전트는 시작 전 `execution.routing`에 사용 가능한 모델·effort 풀을 채웁니다.
+`LOOP_ROUTING_PROFILE`로 준비된 정책을 가져올 수도 있습니다. 예제 목표 JSON은 이 설정을
+채우기 위한 뼈대이며 CLI 기본 모델로 자동 실행하지 않습니다. [라우팅 규칙](../rules/routing.md)을 따릅니다.
 
-상태는 `work context WORK_ID`, 발견 사항은 `work note WORK_ID --text TEXT --evidence REF`,
+기본 상태 복원은 작은 `orchestration context`로 하고 필요한 상세만 `work context WORK_ID`에서 확인합니다.
+발견 사항은 `work note WORK_ID --text TEXT --evidence REF`,
 장애는 `work block WORK_ID --reason TEXT`로 기록합니다. 복구는 `work resume WORK_ID`,
 종료는 `work abort WORK_ID --reason TEXT`입니다. 완료 결과는 파일 변경 이후에도 과거 기록으로 남습니다.
 
@@ -97,6 +104,12 @@ python3 .loop/loop.py knowledge remember --path /project --session SESSION_ID --
 분석 전에 받은 `revision`을 사용합니다. 분석 도중 파일이 달라지면 저장을 거절합니다.
 변경 후 근거를 다시 확인해 같은 ID로 갱신합니다. 조회만으로 오래된 결론을 새 사실로 바꾸지 않습니다.
 `work finish`에 새 `knowledge`와 `observed_revision`을 넣으면 결과와 지식을 한 트랜잭션으로 기록합니다.
+
+상세 맥락의 `sources`에는 작업 위치에서 관측한 경로·해시와 파일명 기반 역할 힌트가 최대 24개
+표시됩니다. 현재 목표로 관련 후보를 우선 보여줄 뿐 내용을 읽거나 의미를 확정하지는 않습니다.
+에이전트가 필요한 PRD·목업·API·설계 자료를 조사할 출발점이며, 검색 결과가 없다는 이유만으로
+자료가 없다고 판단하지 않습니다. 기록한 원본 의존성이 바뀌면 관련 지식을 재확인하고,
+영향받는 문서·코드는 현재 요청 범위에서 조사·갱신합니다.
 
 ## 조회와 읽기 쉬운 문서
 

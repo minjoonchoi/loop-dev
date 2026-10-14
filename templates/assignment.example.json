@@ -12,5 +12,14 @@
     {"id": "storage-path", "description": "Identify persistence entry points and evidence for cross-process reload or its absence."}
   ],
   "knowledge_ids": [],
-  "depends_on": []
+  "depends_on": [],
+  "planning": {
+    "goal_criteria": ["A1"],
+    "rationale": "Trace one persistence path before assigning a complete repair; no separate roles are needed.",
+    "verification": "Check the cited write/read entry points and reload test against acceptance A1.",
+    "complexity": "low",
+    "risk": "low",
+    "uncertainty": "low",
+    "evidence": []
+  }
 }

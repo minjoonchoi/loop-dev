@@ -191,7 +191,8 @@ def profile_fingerprint():
     return {str(p): file_hash(p) for p in paths}
 
 
-def prepare(suite_path, candidate, models, providers, repeats, seed, environment, efforts=None, evaluation=None):
+def prepare(suite_path, candidate, models, providers, repeats, seed, environment, efforts=None, evaluation=None,
+            routing_profile=None):
     suite, seal, assets = load_suite(suite_path)
     integer(repeats, 1, 100, 'repeats')
     integer(seed, 0, 2**31 - 1, 'seed')
@@ -205,10 +206,12 @@ def prepare(suite_path, candidate, models, providers, repeats, seed, environment
     if not isinstance(environment, str) or not environment.strip():
         raise LoopError('Describe the fixed host/configuration profile')
     current = source_snapshot(candidate)
+    routing = bench_transport.routing_profile(models, efforts, routing_profile)
     planned_trials = len(suite['cases']) * len(providers) * repeats * len(ARMS)
     return {'version': 2, 'arms': list(ARMS), 'suite': suite, 'suite_hash': seal, 'assets': assets,
             'source': {'candidate': current},
-            'models': models, 'efforts': efforts, 'evaluation': evaluation, 'goal_types': goal_types(suite),
+            'models': models, 'efforts': efforts, 'evaluation': evaluation, 'routing': routing,
+            'goal_types': goal_types(suite),
             'providers': providers, 'repeats': repeats, 'seed': seed,
             'environment': environment, 'profile': profile_fingerprint(),
             'planned_trials': planned_trials,
@@ -274,7 +277,10 @@ def run_trial(root, spec, case, provider, repeat, arm, sources, suite_home, exec
     for name in case['roots']:
         commit_fixture(workspace / name)
     before = frozen_files(workspace, case)
-    env = bench_transport.prepare_transport(trial, spec['models'], spec['suite']['max_calls'], executables, spec['efforts'])
+    env = bench_transport.prepare_transport(trial, spec['models'], spec['suite']['max_calls'], executables,
+                                            spec['efforts'], spec.get('routing'))
+    transport_hash = file_hash(trial / 'profile.json')
+    routing_hash = file_hash(trial / 'routing-profile.json')
     if arm != 'plain':
         setup = execute([sys.executable, str(sources[arm] / 'scripts/install.py'), '--target',
                          str(workspace / case['turns'][0]['root'])], workspace, trial / 'install', 30, env_overrides=env)
@@ -295,6 +301,12 @@ def run_trial(root, spec, case, provider, repeat, arm, sources, suite_home, exec
             if remaining <= 0:
                 raise LoopError('Scenario time budget exhausted')
             prompt = turn['prompt']
+            if index == 0:
+                prompt += ('\n\nExecution settings shared by both benchmark conditions: the available model/effort '
+                           'catalog is at ' + env['LOOP_ROUTING_PROFILE'] + '. Nested CLI calls may use only its '
+                           'explicit pairs. All conversation, worker, review and retry calls share one call/time '
+                           'budget. Omitted flags use the pinned conversation pair; an explicit allowed selection '
+                           'is preserved. Import this catalog before freezing any task execution settings.')
             if index == 0 and arm != 'plain':
                 prompt = ('/loop-dev ' if provider == 'claude' else '$loop-dev ') + prompt
             value = bench_transport.conversation(provider, spec['models'][provider], workspace / turn['root'], trial,
@@ -322,6 +334,8 @@ def run_trial(root, spec, case, provider, repeat, arm, sources, suite_home, exec
         write_json(trial / 'responses.json', responses)
         record['usage'] = bench_transport.usage(trial)
         record['protected_valid'] = frozen_files(workspace, case) == before
+        record['routing_valid'] = (file_hash(trial / 'profile.json') == transport_hash
+                                   and file_hash(trial / 'routing-profile.json') == routing_hash)
         write_json(trial / 'result.json', record)
     try:
         record['checks'] = grade(trial, workspace, case, suite_home / case['grader'])
@@ -355,8 +369,9 @@ def run_trial(root, spec, case, provider, repeat, arm, sources, suite_home, exec
 
 
 def run(suite_path, candidate, models, providers, repeats, seed, environment, output, executables=None,
-        efforts=None, evaluation=None):
-    spec = prepare(suite_path, candidate, models, providers, repeats, seed, environment, efforts, evaluation)
+        efforts=None, evaluation=None, routing_profile=None):
+    spec = prepare(suite_path, candidate, models, providers, repeats, seed, environment, efforts, evaluation,
+                   routing_profile)
     output = Path(output).resolve()
     if output.exists() or output.is_relative_to(Path(candidate).resolve()) or output.is_relative_to(Path(suite_path).resolve().parent):
         raise LoopError('Use a new benchmark output directory outside source/suite trees')
@@ -407,6 +422,8 @@ def read_run(root):
     if index['manifest_hash'] != digest(spec):
         raise LoopError('Benchmark manifest changed; rerun with the intended criteria and inputs')
     comparison_arms(spec)
+    if 'routing' in spec:
+        bench_transport.validate_routing(spec['routing'], spec['models'], spec['efforts'])
     rows = []
     seen = set()
     for entry in index['trials']:

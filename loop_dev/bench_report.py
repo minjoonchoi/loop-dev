@@ -168,6 +168,8 @@ def report(root, judgment_path=None, *, persist=True):
             missing.append('Harness activation/control contamination: ' + row['id'])
         if not row['usage'].get('calls_complete'):
             missing.append('Provider-call accounting is incomplete: ' + row['id'])
+        if 'routing' in spec and row.get('routing_valid') is not True:
+            missing.append('Frozen model routing inputs changed or are unverified: ' + row['id'])
         if row['arm'] != 'candidate' and not row['protected_valid']:
             missing.append('Control changed protected files; comparison unavailable: ' + row['id'])
     policy = spec['suite']['policy']
@@ -228,11 +230,13 @@ def report(root, judgment_path=None, *, persist=True):
              'scope': {'suite': spec['suite']['id'], 'suite_hash': spec['suite_hash'], 'providers': spec['providers'],
                        'arms': list(arms),
                        'models': spec['models'], 'efforts': spec.get('efforts', {}), 'evaluation': spec.get('evaluation'),
+                       'routing': spec.get('routing'),
                        'goal_types': types, 'repeats': spec['repeats'], 'source': spec['source'], 'mode': spec['mode']},
              'effects': effects, 'missing': missing, 'regressions': regressions, 'comparisons': comparisons,
              'samples': [{'id': r['id'], 'case': r['case'], 'provider': r['provider'], 'arm': r['arm'], 'repeat': r['repeat'],
                           'goal_type': goal_type(cases[r['case']]), 'status': r['status'],
                           'activation_valid': r['activation_valid'], 'protected_valid': r['protected_valid'],
+                          'routing_valid': r.get('routing_valid'),
                           'errors': r['errors'], 'grading_error': r.get('grading_error', False),
                           'seconds': r['seconds'], 'usage': r['usage'], **scored[r['id']]} for r in rows], 'reviewer': reviewer}
     if not persist:

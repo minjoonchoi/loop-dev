@@ -7,7 +7,7 @@ import uuid
 from contextlib import nullcontext
 from pathlib import Path
 
-from .contract import identifier
+from .contract import configure_routing, identifier, routing_readiness
 from .knowledge import KnowledgeBase
 from .storage import LoopError, digest, locked, now, read_json
 from .writing import concise
@@ -28,9 +28,16 @@ def completion_feedback(knowledge, task_id, expected_revision=None, require_work
         raise LoopError("User feedback changed during review or completion; restore context and verify again")
     if feedback["blocked"]:
         raise LoopError(feedback["block_reason"] or "User feedback blocks this task")
+    workers = [json.loads(row[0]) for row in db.execute("SELECT body FROM records WHERE kind='delegation'")]
+    workers = [item for item in workers if item.get("task_id") == task_id]
+    if require_worker:
+        unresolved = sorted(item.get("request", {}).get("id", item["id"])
+                            for item in workers if item.get("status") != "done")
+        if unresolved:
+            raise LoopError("Required worker assignments remain unresolved; assess or retry before completion: "
+                            + ", ".join(unresolved[:5]))
     if require_worker and feedback["requires_worker"]:
-        workers = [json.loads(row[0]) for row in db.execute("SELECT body FROM records WHERE kind='delegation'")]
-        workers = [item for item in workers if item.get("task_id") == task_id and item.get("status") == "done"]
+        workers = [item for item in workers if item.get("status") == "done"]
         latest = max(workers, key=lambda item: (item.get("finished_at", item.get("started_at", "")), item["id"]), default=None)
         if latest is None or latest.get("feedback_substantive_revision") != feedback["substantive_revision"]:
             raise LoopError("Latest substantive user feedback must be consumed by a successful worker before completion")
@@ -55,12 +62,15 @@ class Work:
             raise LoopError("Worker must be claude or codex")
         session = self.knowledge.session(provider, session_id)
         locations = [self.knowledge.attach(path) for path in paths]
+        preflight_execution = {}
+        configure_routing(preflight_execution, import_environment=True, required=False)
         value = {"id": "work-" + uuid.uuid4().hex, "kind": kind, "title": title,
                  "phase": "goal_setting", "session_id": session["id"], "provider": provider,
                  "worker": worker,
                  "locations": sorted({x["id"] for x in locations}),
                  "project_ids": sorted({x["project_id"] for x in locations}),
-                 "goal": None, "notes": [], "result": None, "created_at": now(), "updated_at": now(),
+                 "goal": None, "preflight_execution": preflight_execution,
+                 "notes": [], "result": None, "created_at": now(), "updated_at": now(),
                  "version_token": uuid.uuid4().hex}
         self.knowledge.put("task", value)
         return self.context(value["id"])
@@ -111,13 +121,18 @@ class Work:
                     or not all(isinstance(item.get(k), str) and item[k].strip() for k in ("answer", "applies_to", "evidence"))):
                 raise LoopError("Decisions need answer, basis, applies_to and original evidence")
         execution = goal.get("execution", {})
-        if not isinstance(execution, dict) or set(execution) - {"max_worker_calls", "worker_timeout_seconds", "max_run_seconds"}:
+        if not isinstance(execution, dict) or set(execution) - {"max_worker_calls", "worker_timeout_seconds", "max_run_seconds", "routing"}:
             raise LoopError("Unknown work execution setting")
         for name, default, maximum in (("max_worker_calls", 40, 200), ("worker_timeout_seconds", 600, 3600),
                                         ("max_run_seconds", 14400, 604800)):
             value = execution.get(name, default)
             if type(value) is not int or not 1 <= value <= maximum:
                 raise LoopError(f"{name} must be an integer between 1 and {maximum}")
+        if "routing" not in execution and task.get("preflight_execution", {}).get("routing"):
+            execution["routing"] = task["preflight_execution"]["routing"]
+        configure_routing(execution, import_environment=True, required=False)
+        if execution:
+            goal["execution"] = execution
         task["goal"] = goal
         self.save(task)
         return self.context(task_id)
@@ -128,6 +143,7 @@ class Work:
             raise LoopError("Define the goal before starting")
         if task["goal"]["open_questions"]:
             raise LoopError("Resolve user-owned questions before work starts")
+        routing_readiness(task["goal"].get("execution", {}), task.get("worker", task["provider"]))
         feedback = completion_feedback(self.knowledge, task_id)
         task.update(phase="working", goal_seal=digest(task["goal"]),
                     baseline=self.knowledge.observe(self.locations(task)), started_at=now())
@@ -142,7 +158,11 @@ class Work:
         from .team import Team
         return self.run_workers(Team, task_id, plan, path, recover)
 
-    def run_workers(self, runner, task_id, request, path=None, recover=None):
+    def assess(self, task_id, assessment, path=None):
+        from .delegation import Delegation
+        return self.run_workers(Delegation, task_id, assessment, path, method="assess")
+
+    def run_workers(self, runner, task_id, request, path=None, recover=None, method="run"):
         task = self.load(task_id)
         locations = self.locations(task)
         if path is None and len(locations) != 1:
@@ -152,7 +172,8 @@ class Work:
             raise LoopError("The selected path does not belong to this task")
         root = Path(location["root"])
         with locked(root) if location["git"] else nullcontext():
-            return runner(self.knowledge, task_id, root).run(request, recover)
+            worker = runner(self.knowledge, task_id, root)
+            return worker.assess(request) if method == "assess" else worker.run(request, recover)
 
     def finish(self, task_id, result):
         if not identifier(task_id):

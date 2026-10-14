@@ -54,6 +54,11 @@ class Team:
         pending = [item for item in record["messages"] if item["delivered_turn"] is None
                    and item.get("epoch", 0) == record.get("epoch", 0)]
         budget = self.knowledge.get("worker-budget", self.task_id, required=False) or {"calls": 0}
+        pending_candidate = None
+        if record.get("inflight"):
+            pending_assignment = self.assignment(record["inflight"]["member"])
+            if pending_assignment and pending_assignment["status"] == "candidate":
+                pending_candidate = self.worker.response(pending_assignment)["assignment"]
         return {"passed": record["status"] == "done" and current_evidence,
                 "team_id": record["team_id"], "task_id": self.task_id, "status": record["status"],
                 "summary": record["summary"], "error": (record.get("error") or "")[:280] or None,
@@ -62,16 +67,18 @@ class Team:
                 "members": members[:5], "member_count": len(members),
                 "message_count": len(record["messages"]), "pending_message_count": len(pending),
                 "artifact": record["artifact"],
+                "candidate": pending_candidate,
                 "next": "Inspect the bounded team outcome and run the parent completion checks; team completion is not goal completion."}
 
     def validate(self, plan):
+        from .routing import validate_splits
         if (not isinstance(plan, dict) or set(plan) != {"id", "members", "max_turns"}
                 or not identifier(plan["id"]) or type(plan["max_turns"]) is not int
                 or not 1 <= plan["max_turns"] <= 200):
             raise LoopError("Team plan needs id, members and max_turns between 1 and 200")
         rows = plan["members"]
-        if not isinstance(rows, list) or not 1 <= len(rows) <= MAX_MEMBERS:
-            raise LoopError("A team needs between one and twelve bounded members")
+        if not isinstance(rows, list) or not 2 <= len(rows) <= MAX_MEMBERS:
+            raise LoopError("A team needs between two and twelve bounded members; use delegate for one unit")
         task, state, goal, discovery = self.worker.parent()
         rules = self.knowledge.observe([self.worker.location])[self.worker.location["id"]]["rules"]
         rule_paths = sorted(set(rules) | set(goal.get("rules", []))) if task["kind"] == "development" else sorted(rules)
@@ -89,6 +96,7 @@ class Team:
             if previous and previous.get("team_id") not in (None, plan["id"]):
                 raise LoopError("An assignment already belongs to another team; use an independent scoped assignment")
             members[request["id"]] = request
+        validate_splits(list(members.values()), goal, state["phase"])
         # Validate the whole graph before reserving any provider call.
         visited, visiting = set(), set()
 
@@ -168,6 +176,19 @@ class Team:
                 or assignment_record.get("team_turn") != inflight["turn"]):
             raise LoopError("The recovered worker does not match the reserved team turn")
         state = record["members"][member]
+        if assignment_record["status"] == "candidate":
+            raise LoopError("The main session must assess the candidate before any team result or message is accepted")
+        if assignment_record["status"] == "rejected":
+            self.worker.candidate(assignment_record)
+            self.worker.assessment_receipt(assignment_record)
+            # Only this role is retried. Failed outputs, findings and peer
+            # messages remain quarantined in the rejected attempt directory.
+            state.update(status="pending", summary="The candidate was rejected; this role needs its next allowed profile.",
+                         result=None, after=None)
+            record["inflight"] = None
+            record.update(status="running", error=None)
+            self.save(record)
+            return
         state.update(status=assignment_record["status"], summary=assignment_record["summary"],
                      result=assignment_record.get("result"), after=assignment_record.get("after"))
         if assignment_record["status"] in ("done", "waiting"):
@@ -177,9 +198,8 @@ class Team:
             control = self.worker.control()
             if assignment_record["feedback_revision"] != control["revision"]:
                 raise LoopError("User feedback changed before the team accepted this turn")
-            value = read_json(Path(assignment_record["result"]))
-            if digest(value) != assignment_record.get("result_digest"):
-                raise LoopError("The accepted worker result artifact changed before peer delivery")
+            value = self.worker.candidate(assignment_record)
+            self.worker.assessment_receipt(assignment_record)
             messages = {item["id"]: item for item in record["messages"]}
             for message_id in inflight["inbox"]:
                 messages[message_id]["delivered_turn"] = inflight["turn"]
@@ -230,15 +250,32 @@ class Team:
                                              "result": None, "after": None} for name in assignments}}
                 self.save(record)
             if record["inflight"]:
-                if not isinstance(recover, str) or not recover.strip():
-                    raise LoopError("Interrupted team: inspect logs and stop surviving workers before --recover REASON")
                 inflight = record["inflight"]
                 previous = self.assignment(inflight["member"])
+                matching = (previous and previous.get("team_id") == plan["id"]
+                            and previous.get("team_turn") == inflight["turn"])
+                if matching and previous["status"] == "candidate":
+                    self.worker.candidate(previous)
+                    if (previous["before"] == self.worker.observation()["digest"]
+                            and previous["parent_seal"] == parent_seal
+                            and previous["feedback_revision"] == control["revision"]):
+                        record.update(status="awaiting_assessment", summary="The main session must assess the current candidate before team work continues.")
+                        self.save(record)
+                        return self.status(plan["id"])
+                    if not isinstance(recover, str) or not recover.strip():
+                        self.block(record, "Pending candidate evidence changed; inspect and use --recover REASON for a fresh scoped turn")
+                        return self.status(plan["id"])
+                elif matching and previous["status"] in ("running", "interrupted", "applying"):
+                    if not isinstance(recover, str) or not recover.strip():
+                        raise LoopError("Interrupted team: inspect logs and stop surviving workers before --recover REASON")
                 if (previous and previous.get("team_id") == plan["id"] and previous.get("team_turn") == inflight["turn"]
-                        and previous["status"] in ("done", "waiting", "blocked", "failed")):
+                        and previous["status"] in ("done", "waiting", "rejected", "blocked", "failed")):
                     try:
                         self.accept(record, inflight["member"], previous)
                     except LoopError as exc:
+                        if not isinstance(recover, str) or not recover.strip():
+                            self.block(record, str(exc))
+                            return self.status(plan["id"])
                         # Inspection authorizes a fresh bounded attempt, not
                         # adoption of the stale result or its peer messages.
                         record.setdefault("recoveries", []).append({"turn": inflight["turn"],
@@ -247,6 +284,8 @@ class Team:
                         record["inflight"] = None
                         self.save(record)
                 else:
+                    if not isinstance(recover, str) or not recover.strip():
+                        raise LoopError("Interrupted team: inspect the reserved turn before --recover REASON")
                     record["members"][inflight["member"]]["status"] = "pending"
                     record["inflight"] = None
                     record["recovery"] = recover
@@ -310,7 +349,14 @@ class Team:
                         record["inflight"] = {"member": member, "turn": turn, "inbox": [x["id"] for x in packet["inbox"]]}
                         self.save(record)
                         result = self.worker._run(assignments[member], recover, team=packet)
-                    self.accept(record, member, result["assignment"])
+                    resolved = self.assignment(member)
+                    if resolved["status"] == "candidate":
+                        record["members"][member].update(status="candidate", summary=resolved["summary"], result=resolved["result"])
+                        record.update(status="awaiting_assessment", summary="The main session must assess the current candidate before team work continues.",
+                                      error=resolved.get("error"))
+                        self.save(record)
+                        return self.status(plan["id"])
+                    self.accept(record, member, resolved)
                     if record["status"] in ("blocked", "interrupted"):
                         return self.status(plan["id"])
                 except (LoopError, OSError, ValueError) as exc:

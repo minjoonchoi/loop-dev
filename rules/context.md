@@ -15,7 +15,7 @@ python3 ENTRYPOINT --knowledge-home KNOWLEDGE_HOME \
 ```
 
 Omit `--task` when no task is selected. `--limit` accepts 1–5; the capsule is at most
-16 KiB and includes control state, compact task/worker results, counts and references
+16 KiB and includes control state, compact task/worker results, routing/candidate state, counts and references
 to durable records. Keep the session ID, absolute entrypoint, knowledge home and
 current task binding in handoffs. Never choose a session from recency or another
 conversation's records.
@@ -28,10 +28,20 @@ worker outputs or message ledgers into the main session. Counts and references
 preserve access to omitted records; use relevant pages/search before concluding a
 topic is absent.
 
+Focused `knowledge context` and the development inventory expose `sources` navigation:
+up to 24 paths with fingerprints, project/checkout identity and path-derived role hints.
+Task title/goal ranks likely inputs; it does not inspect their contents. Treat roles
+as search hints, not facts or authority. Counts and `truncated` distinguish omitted
+entries; an empty match is not proof that a required artifact does not exist. Only
+explicit task locations are considered. Use scoped workers to verify selected inputs.
+
 Full evidence stays in the runtime's durable records. Do not create duplicate
 handoff documents, transcript summaries or narrative logs in the project. Recovery
 rebuilds from those records rather than repeatedly summarizing an expanding chat.
 This bounds supplied context; it cannot dictate the host's compaction frequency.
+Pending candidates need internal assessment before effects. Recover their identity,
+profile and artifact references from the capsule; do not paste rejected bodies into
+the next worker prompt. Rejected results remain audit evidence, never reusable facts.
 
 ## Preserve user feedback before dispatch
 
@@ -84,6 +94,57 @@ alone does not require repeating otherwise current work.
 Runtime seals establish feedback delivery and freshness, while the main session and
 development's final independent reviewer check satisfaction; textual `applies_to`
 is not proof that every affected file was corrected.
+
+## Find the artifacts needed for this goal
+
+Use the requested outcome to select inputs and consumers. The user should not need
+to paste existing product context or name every source file on each request. Start
+with scoped knowledge and its references, then delegate bounded discovery of missing
+or stale artifacts in the relevant directories. These are common work shapes, not a
+mandatory sequence that every request must traverse:
+
+| Requested result | Relevant inputs to discover and reconcile |
+| --- | --- |
+| PRD | User requirements, existing product decisions and constraints |
+| Detailed plan and HTML mockup | Current PRD, design rules, behavior and acceptance |
+| Frontend implementation | Current plan and HTML mockup, frontend conventions, available API contract |
+| Backend implementation | Current plan and mockup behavior, data/security/operation constraints |
+| Frontend API integration | Current backend API contract and observed behavior, frontend flows and error states |
+| Backend architecture and functional specification | Product behavior, existing backend boundaries, data and interface evidence |
+| Create or refresh system architecture | Relevant frontend/backend/service specs, implementation evidence and dependencies |
+
+Classify by the requested outcome, not the file extension: a review artifact/mockup
+can be document work, while requested executable behavior uses development gates.
+A mixed plan-and-implementation request retains the development checks.
+
+For each needed input, identify its path, owner project, purpose, current evidence and
+downstream use. Reuse earlier user decisions within their original scope. A filename,
+old explanation or a `confirmed` label alone does not establish current authority.
+Requirements describe the target; implementation describes current behavior. Preserve
+that distinction when comparing a plan, mockup, API and code.
+
+Delegate source checks for contradictions, missing requirements, inconsistent interfaces
+and stale assumptions. Resolve technical facts from current artifacts and behavior.
+Before execution, ask only for material product choices still undecidable from that
+evidence and the user's feedback. Do not repeatedly ask known decisions or make the
+user supply discoverable repository context. After start, resolve technical gaps within
+the fixed scope; a genuinely new product decision blocks that scope rather than creating
+an unplanned question or silently lowering the target.
+
+Use the same session across relevant directories while preserving each project's
+identity, working location and evidence revision. Use separate scoped assignments and
+explicit handoffs across repositories; one worker must not browse an unrelated checkout
+or treat another project's convention as authority. Cross-repository integration must
+check both the producer contract and the consumer behavior.
+
+When storing a derived explanation, plan or architecture conclusion, include the full
+source dependency set, including relevant PRD/spec/mockup/API inputs. Recorded path
+changes make dependent knowledge stale; the main session then identifies affected
+documents and code consumers and delegates only the needed reconciliation. The runtime
+does not discover semantic dependencies or update every derived file automatically.
+Update deliverables within the task's authorized scope, record remaining gaps and
+preserve source references. Do not regenerate unrelated documents or treat a generated
+draft as a new product decision. Reuse unchanged analysis on the next request.
 
 ## Resolve missing context in workers
 

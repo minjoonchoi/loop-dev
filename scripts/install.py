@@ -46,12 +46,27 @@ work with a content/completion check; do not impose a development loop or second
 The main conversation only orchestrates; delegate actual analysis, planning, implementation
 and writing through `.loop/rules/delegation.md`. Every assignment must state purpose,
 read scope, exact allowed edits, prohibited actions, deliverables and completion criteria.
+Split only when an independent deliverable, clear ownership boundary or prerequisite
+justifies another assignment. Map each assignment to goal criteria, assess complexity
+and risk, and keep tightly coupled small work together. Before starting, freeze explicit
+available model/effort profiles in `execution.routing`; optional `LOOP_ROUTING_PROFILE`
+imports a local JSON policy during goal setup. Never guess model availability or ask
+for authentication during execution. Development also needs an opposite-provider review
+profile. The router chooses the cheapest eligible profile for each scoped task, including
+explicit review profiles; do not start everything at the largest model or effort.
 Use `team GOAL --input FILE` or `work team TASK --input FILE` for an explicitly scoped
 team that needs peer findings across bounded turns. Peers communicate only through
 that team's validated messages; no cross-team messages or recursive delegation.
-Workers return scoped results/proposed edits or a precise blocker; no scope expansion,
-user questions, further delegation or direct source writes. Scripts validate and apply
-proposals. Worker completion never replaces the parent completion check.
+Workers return staged results/proposed edits or a precise blocker; no scope expansion,
+user questions, further delegation or direct source writes. Inspect each candidate against
+the goal and assigned criteria, then use `assess GOAL --input FILE` or
+`work assess TASK --input FILE` with pinned evidence. This is an internal quality decision,
+not a user permission request. Never accept solely because a worker says done or marks
+coverage true. Only accepted proposals are applied or shared. Rejected candidates remain
+quarantined evidence, never confirmed knowledge. Continue the same assignment or team
+after rejection so only that work moves to a stronger model or effort. Preserve shared
+finite call/time budgets; environmental failures do not justify automatic escalation.
+Worker completion never replaces the parent completion check.
 Record material user corrections, constraints, pauses, resumes and scope changes with
 `orchestration feedback SESSION_ID --input FILE --expected-control-version VERSION`.
 Preserve the original input reference and task scope; worker messages are never user

@@ -302,12 +302,15 @@ class KnowledgeBase:
 
     def context(self, locations, session_id=None, task_id=None, query=None, limit=20, offset=0):
         from .harness import Harness
+        from .workflows import source_context
         from .writing import task_summary
         if not 1 <= limit <= 100 or offset < 0:
             raise LoopError("Knowledge context limit must be 1..100 and offset must be nonnegative")
         observations = self.observe(locations)
         result = {"home": str(self.home), "revision": digest(observations), "locations": locations,
                   "reusable": [], "stale": [], "unconfirmed": [], "other_contexts": [], "tasks": []}
+        task = self.get("task", task_id, required=False) if task_id else None
+        result["sources"] = source_context(observations, task)
         result["harness"] = Harness(self).status(session_id) if session_id else None
         for item in self.list("topic"):
             if query and query.casefold() not in (item["id"] + " " + item["summary"]).casefold():

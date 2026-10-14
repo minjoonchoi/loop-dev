@@ -38,7 +38,13 @@ def read_history(history):
 def profile(spec):
     if any(spec.get(k) is None for k in PROFILE_FIELDS):
         raise LoopError('Before/after comparison needs the full frozen experiment profile')
-    return {k: spec[k] for k in PROFILE_FIELDS}
+    result = {k: spec[k] for k in PROFILE_FIELDS}
+    # Historical manifests retain their original profile and sealed reports.
+    # Explicit routing is a new experimental setting, never a retroactive edit.
+    if 'routing' in spec:
+        from .bench_transport import validate_routing
+        result['routing'] = validate_routing(spec['routing'], spec['models'], spec['efforts'])
+    return result
 
 
 def entry(root, spec):

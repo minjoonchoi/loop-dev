@@ -20,7 +20,7 @@ on later requests.
    `.loop/loop.py`. In the source repository, `skills/loop-dev/` uses `scripts/loop.py`.
    Retain the entrypoint's absolute path; do not resolve it again from a later cwd.
 3. Read the adjacent harness `rules/work.md` once (`.loop/rules/` in an installed
-   project). Read `rules/delegation.md` when assigning workers, `rules/context.md`
+   project). Read `rules/delegation.md` and `rules/routing.md` when assigning workers, `rules/context.md`
    for recovery/feedback/knowledge details, and `rules/writing.md` when saving records.
    Load `rules/workflow.md` for development. Reuse these instructions while current;
    do not reload every reference or the full execution history on every turn.
@@ -61,11 +61,25 @@ on later requests.
   answers; resolve only missing human-owned decisions before work starts. Delegate
   analysis, planning, implementation and writing with explicit read/write scope,
   prohibitions, deliverables and criteria. During work, continue without questions.
-- Use `delegate` for a small bounded unit or `team` for cooperating roles (`work`
-  subcommands for common tasks). Own the plan; keep each worker's role and scope
-  fixed across turns. Let the coordinator route bounded peer questions, answers and
-  findings automatically. Workers cannot spawn, redelegate, ask users or change goals.
-  Each call has an isolated CLI context; writes are serialized and budgets remain finite.
+- Discover the current PRD, plan, mockup, API and architecture inputs needed for that
+  outcome through scoped knowledge and source investigation. Follow `context.md` to
+  reconcile contradictions and refresh affected consumers across projects. Do not
+  require repeated manual context, infer authority from stale artifacts or force all
+  product-development stages into an unrelated request.
+- Keep a small complete unit in one `delegate`; use `team` only for distinct, separately
+  verifiable goal contributions with dependencies and exclusive write ownership (`work`
+  subcommands for common tasks). Record each assignment's goal link and demand under
+  `routing.md`. Freeze explicit available model/effort profiles before start; choose
+  the least expensive eligible profile, with factual evidence for higher initial demand.
+- Treat worker output as a staged candidate. Read goal/criterion evidence and call
+  `assess` internally; do not ask the user to approve it. Accept before effects or peer
+  delivery, or reject the whole result and rerun the same assignment/team with the
+  next stronger allowed profile. Retain discarded evidence and shared budgets. Handle
+  configuration, permission, timeout and changed-input blockers without escalation.
+  Continue until done or honestly blocked; no additional user prompt is required.
+- Keep each worker's role/scope fixed. Let the coordinator route accepted bounded peer
+  questions, answers and findings. Workers cannot spawn, redelegate, ask users or change
+  goals. Each call has an isolated CLI context; writes are serialized and budgets finite.
 - Persist task steering with `orchestration feedback` using the capsule's current
   control version and the original user input reference; follow `context.md` for
   the exact fields. Send constraints/corrections to affected workers before applying

@@ -33,6 +33,7 @@ def parser():
         sub.add_argument("--claude-model", required=True)
         sub.add_argument("--codex-effort", required=True)
         sub.add_argument("--claude-effort", required=True)
+        sub.add_argument("--routing-profile", type=Path, help="Explicit worker routing policy; omitted uses the fixed benchmark models and efforts")
         sub.add_argument("--provider", choices=("claude", "codex"), action="append", required=name != "check")
         sub.add_argument("--repeats", type=int, default=3)
         sub.add_argument("--seed", type=int, default=0)
@@ -105,6 +106,9 @@ def parser():
         delegated.add_argument("goal")
         delegated.add_argument("--input", type=Path, required=True)
         delegated.add_argument("--recover", help="Reason for retrying an inspected interrupted worker")
+    assessed = commands.add_parser("assess", help="Accept or reject a staged worker candidate against its goal")
+    assessed.add_argument("goal")
+    assessed.add_argument("--input", type=Path, required=True)
     for name in ("block", "abort"):
         sub = commands.add_parser(name)
         sub.add_argument("goal")
@@ -129,6 +133,10 @@ def parser():
         delegated.add_argument("--input", type=Path, required=True)
         delegated.add_argument("--path", type=Path)
         delegated.add_argument("--recover")
+    assessed_work = work_commands.add_parser("assess")
+    assessed_work.add_argument("task")
+    assessed_work.add_argument("--input", type=Path, required=True)
+    assessed_work.add_argument("--path", type=Path)
     for name in ("context", "start", "resume"):
         work_commands.add_parser(name).add_argument("task")
     for name in ("goal", "finish"):
@@ -201,6 +209,8 @@ def common_command(args, knowledge):
         return work.open(args.kind, args.title, args.provider, paths, args.session, args.worker)
     if cmd in ("delegate", "team"):
         return getattr(work, cmd)(args.task, read_json(args.input), args.path, args.recover)
+    if cmd == "assess":
+        return work.assess(args.task, read_json(args.input), args.path)
     if cmd == "goal":
         return work.define(args.task, read_json(args.input))
     if cmd == "finish":
@@ -226,13 +236,14 @@ def main(argv=None):
                     providers=args.provider, repeats=args.repeats, seed=args.seed, environment=args.environment,
                     output=args.output, judge_provider=args.judge_provider, judge_model=args.judge_model,
                     judge_effort=args.judge_effort, judge_repeats=args.judge_repeats, dry_run=args.dry_run,
-                    history=args.history)
+                    history=args.history, routing_profile=args.routing_profile)
             elif cmd in ("plan", "run"):
                 values = [args.suite, args.candidate,
                           {"codex": args.codex_model, "claude": args.claude_model},
                           args.provider, args.repeats, args.seed, args.environment]
                 efforts = {"codex": args.codex_effort, "claude": args.claude_effort}
-                output = benchmark.prepare(*values, efforts=efforts) if cmd == "plan" else benchmark.run(*values, args.output, efforts=efforts)
+                output = (benchmark.prepare(*values, efforts=efforts, routing_profile=args.routing_profile) if cmd == "plan" else
+                          benchmark.run(*values, args.output, efforts=efforts, routing_profile=args.routing_profile))
                 if cmd == "plan":
                     output["source"] = {k: {"hash": v["hash"]} for k, v in output["source"].items()}
             elif cmd == "judge":
@@ -285,6 +296,8 @@ def main(argv=None):
                 output = engine.initialize(args.title, args.implementer, args.session, args.orchestrator)
             elif cmd in ("delegate", "team"):
                 output = getattr(engine, cmd)(read_json(args.input), args.recover)
+            elif cmd == "assess":
+                output = engine.assess(read_json(args.input))
             elif cmd in ("status", "context"):
                 output = engine.refresh()
             elif cmd == "validate":

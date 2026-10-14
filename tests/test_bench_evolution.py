@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 
 import test_benchmark as fixtures
-from loop_dev import bench_check, bench_evolution as evolution, bench_report as reports, benchmark as bench
+from loop_dev import bench_check, bench_evolution as evolution, bench_report as reports, bench_transport, benchmark as bench
 from loop_dev.storage import LoopError, digest, file_hash, read_json, write_json
 
 
@@ -170,6 +170,7 @@ class EvolutionTests(unittest.TestCase):
                 self.next_run(field)
                 if field == 'efforts':
                     self.data.spec['efforts']['claude'] = 'xhigh'
+                    self.data.spec['routing'] = bench_transport.routing_profile(self.data.spec['models'], self.data.spec['efforts'])
                 elif field == 'evaluation':
                     self.data.spec['evaluation']['model'] = 'another-judge'
                     self.data.ratings['reviewer']['model'] = 'another-judge'

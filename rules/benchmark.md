@@ -22,6 +22,11 @@ work does not need a benchmark experiment. See the source repository's
   If live execution is unavailable, finish implementation checks but record the
   before/after quality comparison as unverified; do not invent a baseline.
 - Use identical fixtures, requests, profiles and budgets for plain/candidate.
+  `--routing-profile FILE` evaluates worker selection with the same explicit allowed
+  pool in both arms; it must include both pinned root model/effort pairs. The judge
+  stays separately fixed. Without the option, nested calls retain one fixed pair
+  per provider. Record mode/policy/hash; changing them starts a separate baseline.
+  Workers, reviewers, rejected attempts and retries share the original call/time budget.
   Use a dedicated host profile without an automatically activated global harness.
   Preserve existing permissions, credentials and hooks; do not bypass nested-CLI limits.
 - Keep outcome checks outside the agent workspace. Freeze the rubric, weights,
@@ -48,6 +53,10 @@ work does not need a benchmark experiment. See the source repository's
   Never claim superiority because a control could not execute.
 - Compare each harness-assisted result with its plain counterpart. Report quality, extra user requests,
   elapsed time and known usage separately; unavailable billing remains unknown.
+  Retain requested model/effort counts, failures and unfinished outcomes. Attribute
+  rejection/escalation only to linked runtime evidence; missing observations stay
+  unknown. Configured cost ranks are not prices, and managed effort caps prevent
+  treating requested settings as proof of effective model behavior.
   Retain results per goal type and provider/model/effort. Every selected type must
   execute across all arms and repetitions. An aggregate gain cannot hide a type's loss.
 - Run `bench gate` on the current source and suite before claiming a harness change

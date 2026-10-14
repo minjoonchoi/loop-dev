@@ -12,7 +12,7 @@ from .storage import LoopError, file_hash, write_json
 
 def check(models, efforts, *, candidate=None, suite=None, providers=None,
           repeats=3, seed=0, environment=None, output=None, judge_provider='codex', judge_model=None,
-          judge_effort=None, judge_repeats=2, dry_run=False, executables=None, history=None):
+          judge_effort=None, judge_repeats=2, dry_run=False, executables=None, history=None, routing_profile=None):
     source = Path(__file__).resolve().parent.parent
     candidate = Path(candidate or source).resolve()
     suite = Path(suite or source / 'benchmarks/suite.json').resolve()
@@ -22,7 +22,8 @@ def check(models, efforts, *, candidate=None, suite=None, providers=None,
         raise LoopError('Select Claude or Codex as the common judge')
     evaluation = {'provider': judge_provider, 'model': models[judge_provider] if judge_model is None else judge_model,
                   'effort': efforts.get(judge_provider) if judge_effort is None else judge_effort, 'repeats': judge_repeats}
-    spec = benchmark.prepare(suite, candidate, models, providers, repeats, seed, environment, efforts, evaluation)
+    spec = benchmark.prepare(suite, candidate, models, providers, repeats, seed, environment, efforts, evaluation,
+                             routing_profile)
     spec['source'] = {k: {'hash': v['hash']} for k, v in spec['source'].items()}
     output = Path(output).resolve() if output else candidate.parent / 'loop-dev-benchmarks' / (
         datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '-' + uuid.uuid4().hex[:8])
@@ -48,7 +49,8 @@ def check(models, efforts, *, candidate=None, suite=None, providers=None,
                   'passed': not failure and value['passed'], 'failure': failure,
                   'output': str(output), 'history': str(history), 'evaluation': evaluation,
                   'goal_types': benchmark.goal_types(spec['suite']), 'arms': list(benchmark.comparison_arms(spec)),
-                  'models': models, 'efforts': efforts, 'manifest_hash': value.get('manifest_hash') if value else None,
+                  'models': models, 'efforts': efforts, 'routing': spec.get('routing'),
+                  'manifest_hash': value.get('manifest_hash') if value else None,
                   'on_off_verdict': value.get('on_off_verdict', value['verdict']) if value else None,
                   'evolution': summary,
                   'evolution_hash': file_hash(output / 'evolution.json') if (output / 'evolution.json').exists() else None,
@@ -60,7 +62,8 @@ def check(models, efforts, *, candidate=None, suite=None, providers=None,
     try:
         # An unjudged run is normally inconclusive; its verdict must not stop judging.
         benchmark.run(suite, candidate, models, providers, repeats, seed, environment,
-                      output, executables=executables, efforts=efforts, evaluation=evaluation)
+                      output, executables=executables, efforts=efforts, evaluation=evaluation,
+                      routing_profile=spec['routing']['policy'] if spec['routing']['mode'] == 'adaptive' else None)
         phase = 'judge'
         bench_report.judge(output, judge_provider, evaluation['model'], judge_repeats, effort=evaluation['effort'])
         phase = 'gate'

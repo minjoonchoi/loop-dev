@@ -8,7 +8,7 @@ from pathlib import Path
 import uuid
 
 from . import context, providers
-from .contract import identifier, template, validate
+from .contract import configure_routing, identifier, routing_readiness, template, validate
 from .process import execute
 from .session import Session
 from .knowledge import KnowledgeBase
@@ -37,9 +37,9 @@ class Engine:
             raise LoopError(f"Goal already exists: {self.id}")
         session = Session(self.root, session_id, self.knowledge) if session_id else Session.create(self.root, orchestrator, self.knowledge)
         session.load(orchestrator)
-        self.goal_dir.mkdir(parents=True)
         contract = template(self.id, title, implementer)
         contract["execution"]["orchestrator"] = orchestrator
+        self.goal_dir.mkdir(parents=True)
         for name in (".loop/rules/workflow.md", "rules/work.md", "rules/writing.md", "rules/workflow.md", "rules/delegation.md",
                      "rules/context.md", "rules/quality.md", "AGENTS.md", "CLAUDE.md"):
             if (self.root / name).is_file():
@@ -129,6 +129,38 @@ class Engine:
                 "For execution reviews, report blocked if it requires changing frozen scope or acceptance.\nREVIEW DATA:\n"
                 + json.dumps(value, ensure_ascii=False, indent=2))
 
+    def review_routing(self, contract, phase, criterion_ids, current, baseline=None):
+        """Route independent reviews from their actual scope, never a host default."""
+        from .routing import select_profile, validate_planning
+        baseline = baseline or current
+        changed = [name for name in set(current["files"]) | set(baseline["files"])
+                   if current["files"].get(name) != baseline["files"].get(name)]
+        task_id = self.work_id()
+        relevant = [record for record in self.knowledge.list("delegation")
+                    if record.get("task_id") == task_id and
+                    set(record.get("request", {}).get("planning", {}).get("goal_criteria", [])) & set(criterion_ids)]
+        high_risk = any(record.get("request", {}).get("planning", {}).get("risk") == "high" for record in relevant)
+        high_uncertainty = any(record.get("request", {}).get("planning", {}).get("uncertainty") == "high" for record in relevant)
+        planning = {"goal_criteria": criterion_ids,
+                    "rationale": "Independent review checks accepted criteria against source and verification evidence.",
+                    "verification": "Cover every selected criterion, inspect real behavior and report all findings.",
+                    "complexity": "medium",
+                    "risk": "high" if high_risk else "low", "uncertainty": "high" if high_uncertainty else "low",
+                    "evidence": [str(self.goal_dir / "contract.json") + "#/target/acceptance",
+                                 f"review scope: {len(criterion_ids)} criteria and {len(changed)} changed files"]}
+        if high_risk or high_uncertainty:
+            for record in relevant:
+                demand = record.get("request", {}).get("planning", {})
+                if demand.get("risk") == "high" or demand.get("uncertainty") == "high":
+                    planning["evidence"].append("delegation:" + record["id"] + "#/request/planning")
+                    if len(planning["evidence"]) == 5:
+                        break
+        planning = validate_planning(planning, contract, "draft" if phase == "plan" else "running")
+        profile = select_profile(contract["execution"]["routing"],
+                                 providers.reviewer(contract["execution"]["implementer"]), planning)
+        return {"profile": profile, "planning": planning,
+                "selection_reason": "Use the cheapest configured opposite-provider profile meeting the review scope."}
+
     def refresh(self):
         state, contract, discovery = self.load()
         session_context = self.session(state, contract, discovery).refresh(self.id)
@@ -181,6 +213,10 @@ class Engine:
         if state["phase"] != "draft":
             raise LoopError("Plan review is only allowed before freeze")
         self.active()
+        original_contract = digest(contract)
+        configure_routing(contract["execution"], import_environment=True)
+        if digest(contract) != original_contract:
+            write_json(self.goal_dir / "contract.json", contract)
         self.check_valid(contract, discovery)
         task_id = self.work_id(state, contract, discovery)
         feedback = completion_feedback(self.knowledge, task_id)
@@ -196,15 +232,17 @@ class Engine:
         if not health["ok"]:
             raise LoopError(f"Both CLIs must be available before starting; inspect {run_dir / 'doctor.json'}")
         ids = [x["id"] for x in contract["target"]["acceptance"]]
+        routing = self.review_routing(contract, "plan", ids, before)
         session = self.session(state, contract, discovery)
         prompt = self.review_prompt(feedback, self.root, contract, discovery, "plan", ids, {}, before,
                                     session_context=session.refresh(self.id))
         review = providers.review(providers.reviewer(contract["execution"]["implementer"]), self.root,
-                                  run_dir / "review", prompt, contract["execution"]["review_timeout_seconds"], ids, "plan")
+                                  run_dir / "review", prompt, contract["execution"]["review_timeout_seconds"], ids, "plan",
+                                  model=routing["profile"]["model"], effort=routing["profile"]["effort"])
         if snapshot(self.root)["digest"] != before["digest"] or self.inputs(*self.load()[1:]) != inputs:
             raise LoopError("Repository changed during read-only plan review; review is invalid")
         report = {"phase": "plan", "at": now(), "passed": review["passed"], "review": review,
-                  "inputs": inputs, "snapshot": before["digest"], "doctor": health,
+                  "inputs": inputs, "snapshot": before["digest"], "doctor": health, "routing": routing,
                   "feedback_revision": feedback["revision"],
                   "feedback_substantive_revision": feedback["substantive_revision"]}
         path = run_dir / "gate.json"
@@ -232,6 +270,13 @@ class Engine:
         from .team import Team
         self.refresh()
         return Team(self.knowledge, self.work_id(), self.root).run(plan, recover)
+
+    def assess(self, assessment):
+        from .delegation import Delegation
+        self.refresh()
+        result = Delegation(self.knowledge, self.work_id(), self.root).assess(assessment)
+        self.refresh()
+        return result
 
     def freeze(self):
         state, contract, discovery = self.load()
@@ -265,6 +310,7 @@ class Engine:
         if state["phase"] != "ready":
             raise LoopError("Only a frozen, ready goal can start")
         self.integrity(state, contract, discovery)
+        routing_readiness(contract["execution"], contract["execution"]["implementer"], development=True)
         if snapshot(self.root)["digest"] != state["ready_snapshot"]:
             raise LoopError("Code changed since preflight; create a new preflight goal")
         task_id = self.work_id(state, contract, discovery)
@@ -344,9 +390,12 @@ class Engine:
                 prompt = self.review_prompt(feedback, self.root, contract, discovery, phase, ids, report["checks"],
                                             state["baseline_snapshot"], state["notes"],
                                             self.session(state, contract, discovery).refresh(self.id))
+                report["routing"] = self.review_routing(contract, phase, ids, before, state["baseline_snapshot"])
+                profile = report["routing"]["profile"]
                 report["review"] = providers.review(
                     providers.reviewer(state["implementer"]), self.root, run_dir / "review", prompt,
-                    min(contract["execution"]["review_timeout_seconds"], max(0.01, remaining)), ids, phase)
+                    min(contract["execution"]["review_timeout_seconds"], max(0.01, remaining)), ids, phase,
+                    model=profile["model"], effort=profile["effort"])
                 if snapshot(self.root)["digest"] != before["digest"]:
                     raise LoopError("Read-only reviewer changed repository inputs; review is invalid")
                 self.integrity(state, *self.load()[1:])

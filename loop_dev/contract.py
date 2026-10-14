@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import os
 
 from .storage import LoopError, inside
 
@@ -17,7 +18,7 @@ def identifier(value):
 
 
 def template(goal_id, title, implementer):
-    return {
+    value = {
         "version": 1, "id": goal_id, "title": title,
         "target": {"outcome": "", "users": [], "in_scope": [], "out_of_scope": [],
                    "requirements": [], "acceptance": []},
@@ -28,6 +29,37 @@ def template(goal_id, title, implementer):
                       "worker_timeout_seconds": 600, "max_gate_attempts": 3,
                       "review_timeout_seconds": 600, "max_run_seconds": 14400},
     }
+    configure_routing(value["execution"], import_environment=True, required=False)
+    return value
+
+
+def configure_routing(execution, import_environment=False, required=True):
+    """Normalize explicit setup once; execution never inherits live environment settings."""
+    from .routing import load_policy, validate_policy
+    if "routing" not in execution:
+        if import_environment and os.environ.get("LOOP_ROUTING_PROFILE"):
+            execution["routing"] = load_policy()
+        elif required:
+            raise LoopError("Configure execution.routing with explicit available model/effort profiles before work")
+        else:
+            return None
+    execution["routing"] = validate_policy(execution["routing"])
+    return execution["routing"]
+
+
+def routing_readiness(execution, worker, development=False):
+    """Check configured eligibility without probing credentials or selecting a host default."""
+    from .routing import select_profile
+    policy = configure_routing(execution)
+    demand = {"goal_criteria": ["goal_setting"], "rationale": "Verify configured routing before work starts.",
+              "verification": "An explicit eligible profile exists for each required provider.",
+              "complexity": "medium" if development else "low", "risk": "low", "uncertainty": "low",
+              "evidence": ["execution.routing: preflight policy coverage"]}
+    select_profile(policy, worker, demand)
+    if development:
+        from .providers import reviewer
+        select_profile(policy, reviewer(worker), demand)
+    return policy
 
 
 def validate(contract, discovery, root):
@@ -131,6 +163,10 @@ def validate(contract, discovery, root):
     require(execution.get("implementer") in ("claude", "codex"), "implementer must be claude or codex")
     require(execution.get("orchestrator", execution.get("implementer")) in ("claude", "codex"),
             "orchestrator must be claude or codex")
+    try:
+        routing_readiness(dict(execution), execution.get("implementer"), development=True)
+    except LoopError as exc:
+        errors.append(str(exc))
     for key, default, maximum in (("max_worker_calls", 40, 200), ("worker_timeout_seconds", 600, 3600)):
         val = execution.get(key, default)
         require(type(val) is int and 1 <= val <= maximum, f"execution.{key} must be 1..{maximum}")

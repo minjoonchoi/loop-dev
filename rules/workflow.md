@@ -50,7 +50,7 @@ product scope beyond the user's goal or wait for repeated "next" instructions.
 
 - Follow the user's goal and applicable repository instructions. Inspect nested
   `AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md` and project rules before editing.
-- Read this file, `delegation.md`, `context.md`, and `quality.md`. Project-specific rules remain in
+- Read this file, `delegation.md`, `routing.md`, `context.md`, and `quality.md`. Project-specific rules remain in
   their original files; reference them in the contract rather than duplicating them.
 - An explicit worker/reviewer assignment is a bounded tool task. Return its schema
   only; never expand scope, redelegate, ask the user or start another loop.
@@ -93,8 +93,14 @@ human decisions. A completed goal does not turn off the session.
 4. Have planning workers decompose work into ordered vertical milestones. Every
    requirement maps to acceptance, every acceptance maps to executable checks and a milestone. Include
    existing regression checks and real integration/E2E checks where needed.
+   Keep a complete small contribution together; team members need separate verifiable
+   outputs, explicit dependencies and exclusive write ownership under `routing.md`.
 5. Fill the ten decision areas in `.loop/templates/contract.example.json`'s format.
    Record basis accurately: `user`, `repository-rule`, or `delegated`.
+6. Record explicit available profiles in `execution.routing`, or import them using
+   `LOOP_ROUTING_PROFILE` during preflight. Configure suitable profiles for the worker
+   and opposite reviewer before freeze. Assignment demand chooses the cheapest eligible
+   profile; higher initial demand needs evidence. No runtime model/effort fallback is used.
 
 ## 2. Resolve only human-owned uncertainty
 
@@ -128,7 +134,8 @@ python3 .loop/loop.py validate goal-id
 python3 .loop/loop.py plan-review goal-id
 ```
 
-The live plan review invokes the opposite provider, which also checks that required
+The live plan review invokes the opposite provider with the explicit review profile
+selected under `routing.md`, which also checks that required
 CLI flags/authentication work. Review must cover every acceptance criterion and
 find no unresolved questions or findings. If it fails, read the artifact, investigate
 and repair the plan. Only new human-owned choices return to the user, before start.
@@ -156,12 +163,18 @@ Repeat until the goal is complete:
    paths and dependencies. Pass only necessary current knowledge and prerequisite
    assignment IDs. Inspect each result before selecting the next scope.
 3. Delegate complete implementation units with exact allowed file paths, exclusions,
-   deliverables and criteria. Use `delegate goal-id --input ASSIGNMENT` for a small
-   unit or `team goal-id --input PLAN` for cooperating roles. Follow `delegation.md`
-   for fixed member scopes, automatic peer routing and finite turns; the main session
+   deliverables, criteria and goal-linked demand. Use `delegate goal-id --input ASSIGNMENT`
+   for a small unit or `team goal-id --input PLAN` for cooperating roles. Follow `delegation.md`
+   for fixed member scopes, accepted peer routing and finite turns; the main session
    reads compact role results rather than relaying each message.
    Include required integration, error handling, compatibility and documentation.
-   Inspect validated proposed/applied changes; worker `done` is not milestone success.
+   The command stages a candidate. Inspect its goal contribution and concrete evidence,
+   then call `assess goal-id --input ASSESSMENT` internally. Accept to apply/release it;
+   reject an incorrect or harmful result and rerun the same assignment/team with a
+   stronger allowed profile within the existing budgets. Do not ask the user to approve
+   candidates or add an obligatory model judge. Continue accepted team turns with the
+   same plan; worker `done` is not milestone success. Setup, permission and changed-input
+   blockers do not justify model escalation.
    Refresh affected knowledge after changes. Do not restamp stale summaries or redo
    unaffected analysis. Do not accept stubs, fake success or weakened tests.
 4. Record meaningful discoveries, decisions and adjusted implementation tactics:
