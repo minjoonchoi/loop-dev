@@ -10,7 +10,7 @@ choose assignments and assess their results.
 After every user input, worker result or compaction, run:
 
 ```sh
-python3 ENTRYPOINT --knowledge-home KNOWLEDGE_HOME \
+python3 "$ENTRYPOINT" --knowledge-home "$KNOWLEDGE_HOME" \
   orchestration context SESSION_ID --task TASK_ID --limit 5
 ```
 
@@ -49,7 +49,7 @@ When a user steers an identified task, save the feedback with the capsule's curr
 `control_version` before dispatching more work:
 
 ```sh
-python3 ENTRYPOINT --knowledge-home KNOWLEDGE_HOME \
+python3 "$ENTRYPOINT" --knowledge-home "$KNOWLEDGE_HOME" \
   orchestration feedback SESSION_ID --input /temporary/feedback.json \
   --expected-control-version VERSION
 ```
@@ -200,12 +200,14 @@ replace only relevant summaries. The user never writes these files or runs comma
 1. Read the relevant detailed context and retain its `revision` before investigating.
 2. Delegate inspection of only missing/stale topics. Reconcile worker draft findings
    against returned evidence; they are not automatically confirmed. Write an entry using
-   `.loop/templates/analysis.example.json` into an ignored `.loop/state/` input file.
+   `"$TEMPLATES_HOME/analysis.example.json"` into an ignored
+   `"$PROJECT_ROOT/.loop/state/"` input file.
 3. Run the following internal action yourself:
 
    ```sh
-   python3 .loop/loop.py session remember SESSION_ID \
-     --input .loop/state/analysis-entry.json --observed REVISION
+   python3 "$ENTRYPOINT" --knowledge-home "$KNOWLEDGE_HOME" --root "$PROJECT_ROOT" \
+     session remember SESSION_ID \
+     --input "$PROJECT_ROOT/.loop/state/analysis-entry.json" --observed REVISION
    ```
 
 4. After source edits, obtain a new context revision, inspect the changed dependencies

@@ -9,6 +9,22 @@ recovery; `context.md` owns targeted retrieval and feedback. Reuse current refer
 Assigned workers/reviewers execute only their assignment: no entry loop, state writes,
 user questions, scope expansion or further delegation.
 
+## Command binding
+
+In examples, set `ENTRYPOINT`, `KNOWLEDGE_HOME` and `RULES_HOME` from the retained
+absolute `entrypoint`, `knowledge_home` and `rules_home`; set `PROJECT_ROOT` to the
+selected absolute project path. Derive templates once:
+
+```sh
+TEMPLATES_HOME="$(dirname "$RULES_HOME")/templates"
+```
+
+Prefix commands with `python3 "$ENTRYPOINT" --knowledge-home "$KNOWLEDGE_HOME"`.
+Development/session commands also need global `--root "$PROJECT_ROOT"` before the
+subcommand; common work selects its location with `--path "$PROJECT_ROOT"` where
+supported. Read examples from `"$TEMPLATES_HOME/FILE"`; store inputs at absolute
+ignored/temporary paths. Never rely on cwd-local `.loop/loop.py` or templates.
+
 ## Interpret intent
 
 | Requested outcome | Route |

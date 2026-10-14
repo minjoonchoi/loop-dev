@@ -45,8 +45,8 @@ bounded analysis first and use its evidence to create the next assignment.
 ## Execute and inspect
 
 ```sh
-python3 .loop/loop.py delegate GOAL --input .loop/state/assignment.json
-python3 .loop/loop.py work delegate TASK --input /temporary/assignment.json --path /absolute/project
+python3 "$ENTRYPOINT" --knowledge-home "$KNOWLEDGE_HOME" --root "$PROJECT_ROOT" delegate GOAL --input "$PROJECT_ROOT/.loop/state/assignment.json"
+python3 "$ENTRYPOINT" --knowledge-home "$KNOWLEDGE_HOME" work delegate TASK --input /temporary/assignment.json --path "$PROJECT_ROOT"
 ```
 
 The orchestrator creates the JSON and runs these commands; the user supplies neither.
@@ -58,8 +58,8 @@ For one bounded unit, use `delegate`. For several fixed roles that need to excha
 findings or technical questions, use a team:
 
 ```sh
-python3 .loop/loop.py team GOAL --input /temporary/team-plan.json
-python3 .loop/loop.py work team TASK --input /temporary/team-plan.json --path /absolute/project
+python3 "$ENTRYPOINT" --knowledge-home "$KNOWLEDGE_HOME" --root "$PROJECT_ROOT" team GOAL --input /temporary/team-plan.json
+python3 "$ENTRYPOINT" --knowledge-home "$KNOWLEDGE_HOME" work team TASK --input /temporary/team-plan.json --path "$PROJECT_ROOT"
 ```
 
 The plan has `id`, `members` and `max_turns`. Each member has exactly one `assignment`
@@ -131,8 +131,8 @@ accept merely because its JSON is valid or the worker says `done`. For a small t
 the main session can make this check directly; do not require another model judge.
 
 ```sh
-python3 .loop/loop.py assess GOAL --input /temporary/assessment.json
-python3 .loop/loop.py work assess TASK --input /temporary/assessment.json --path /absolute/project
+python3 "$ENTRYPOINT" --knowledge-home "$KNOWLEDGE_HOME" --root "$PROJECT_ROOT" assess GOAL --input /temporary/assessment.json
+python3 "$ENTRYPOINT" --knowledge-home "$KNOWLEDGE_HOME" work assess TASK --input /temporary/assessment.json --path "$PROJECT_ROOT"
 ```
 
 The assessment has exactly these fields:

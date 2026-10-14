@@ -66,7 +66,7 @@ product scope beyond the user's goal or wait for repeated "next" instructions.
 For a new ordinary development request, run this command yourself:
 
 ```sh
-python3 .loop/loop.py init goal-id --title "Desired result" --implementer codex --orchestrator codex --session SESSION_ID
+python3 "$ENTRYPOINT" --knowledge-home "$KNOWLEDGE_HOME" --root "$PROJECT_ROOT" init goal-id --title "Desired result" --implementer codex --orchestrator codex --session SESSION_ID
 ```
 
 Set `--orchestrator claude` inside Claude Code. The worker defaults to the same
@@ -95,7 +95,7 @@ human decisions. A completed goal does not turn off the session.
    existing regression checks and real integration/E2E checks where needed.
    Keep a complete small contribution together; team members need separate verifiable
    outputs, explicit dependencies and exclusive write ownership under `routing.md`.
-5. Fill the ten decision areas in `.loop/templates/contract.example.json`'s format.
+5. Fill the ten decision areas in `"$TEMPLATES_HOME/contract.example.json"`'s format.
    Record basis accurately: `user`, `repository-rule`, or `delegated`.
 6. Record explicit available profiles in `execution.routing`, or import them using
    `LOOP_ROUTING_PROFILE` during preflight. Configure suitable profiles for the worker
@@ -130,8 +130,8 @@ controls. Missing credentials or required infrastructure must be resolved now.
 ## 3. Cross-review and freeze the executable contract
 
 ```sh
-python3 .loop/loop.py validate goal-id
-python3 .loop/loop.py plan-review goal-id
+python3 "$ENTRYPOINT" --knowledge-home "$KNOWLEDGE_HOME" --root "$PROJECT_ROOT" validate goal-id
+python3 "$ENTRYPOINT" --knowledge-home "$KNOWLEDGE_HOME" --root "$PROJECT_ROOT" plan-review goal-id
 ```
 
 The live plan review invokes the opposite provider with the explicit review profile
@@ -143,8 +143,8 @@ and repair the plan. Only new human-owned choices return to the user, before sta
 Once the goal is sufficiently specified under the user's authorization:
 
 ```sh
-python3 .loop/loop.py freeze goal-id
-python3 .loop/loop.py start goal-id
+python3 "$ENTRYPOINT" --knowledge-home "$KNOWLEDGE_HOME" --root "$PROJECT_ROOT" freeze goal-id
+python3 "$ENTRYPOINT" --knowledge-home "$KNOWLEDGE_HOME" --root "$PROJECT_ROOT" start goal-id
 ```
 
 Do not add a redundant approval question. Freeze seals target, discovery, decisions,
@@ -180,7 +180,7 @@ Repeat until the goal is complete:
 4. Record meaningful discoveries, decisions and adjusted implementation tactics:
 
    ```sh
-   python3 .loop/loop.py note goal-id --kind discovery \
+   python3 "$ENTRYPOINT" --knowledge-home "$KNOWLEDGE_HOME" --root "$PROJECT_ROOT" note goal-id --kind discovery \
      --text "What was learned and what it changes" --evidence "src/path.py:42 and check-id"
    ```
 
@@ -190,7 +190,7 @@ Repeat until the goal is complete:
    provider review. Read the report; it supplies the next corrective work.
 
    ```sh
-   python3 .loop/loop.py checkpoint goal-id --milestone M1
+   python3 "$ENTRYPOINT" --knowledge-home "$KNOWLEDGE_HOME" --root "$PROJECT_ROOT" checkpoint goal-id --milestone M1
    ```
 
 6. When a check/review fails, delegate bounded diagnosis and repair with its evidence, refresh
@@ -222,7 +222,7 @@ the exact recovery condition. New requirements start a new preflight goal.
   interruption if necessary, then `resume`. Consumed attempts stay consumed.
 - `block --reason` records an unavoidable obstacle. `abort --reason` preserves all
   files and evidence and releases the working tree for another goal. Neither is success.
-- A user-requested pause follows `work.md`'s pause recipe. Preserve the recorded
+- A user-requested pause follows `entry.md`'s pause recipe. Preserve the recorded
   boundary; a progress question, retry recommendation or skill reactivation is not
   authorization to resume paused work.
 - Give brief progress updates during execution. Finish with achieved behavior,
