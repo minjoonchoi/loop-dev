@@ -164,6 +164,57 @@ class RoutedDelegationTests(ProjectTest):
         self.assertFalse(self.packet(retried)["routing"]["escalated"])
         self.assertEqual(self.kb.get("worker-budget", self.task_id)["calls"], 2)
 
+    def test_model_reported_blocker_can_be_disproved_without_promoting_it(self):
+        request = assignment("unsupported-blocker")
+        blocked_value = {"status": "blocked", "summary": "The required source is missing.", "outputs": [],
+                         "coverage": [{"criterion_id": row["id"], "satisfied": False, "evidence": "value.py is missing."}
+                                      for row in request["criteria"]],
+                         "changes": [], "findings": [], "blockers": ["value.py is missing."]}
+        with patch.dict(os.environ, {"LOOP_WORKER_RESULT": json.dumps(blocked_value)}):
+            blocked = self.worker.run(request)
+            retained = Path(blocked["assignment"]["result"])
+            original = retained.read_bytes()
+            write_json(retained, {"status": "blocked", "summary": "A different unassessed blocker."})
+            with self.assertRaisesRegex(LoopError, "artifact changed"):
+                self.worker.run(request)
+            retained.write_bytes(original)
+            retry = self.worker.run(request)
+        self.assertEqual(blocked["assignment"]["status"], "blocked")
+        self.assertTrue(blocked["assignment"]["model_reported_blocker"])
+        self.assertTrue(blocked["assignment"]["candidate_id"])
+        self.assertIn("Independently verify", blocked["next"])
+        self.assertEqual(retry["assignment"]["profile"], blocked["assignment"]["profile"])
+        rejected = self.decision(retry, "reject", "unsupported_claim")
+        evidence = {"ref": str((self.root / "value.py").resolve()), "sha256": file_hash(self.root / "value.py")}
+        for check in rejected["checks"]:
+            check["evidence"].append(evidence)
+        invalid_acceptance = copy.deepcopy(rejected)
+        invalid_acceptance.update(verdict="accept", reason="accepted")
+        for check in invalid_acceptance["checks"]:
+            check["satisfied"] = True
+        with self.assertRaisesRegex(LoopError, "blocker cannot be accepted"):
+            self.worker.assess(invalid_acceptance)
+        self.assertEqual(self.stored(retry)["status"], "blocked")
+        self.worker.assess(rejected)
+        stronger = self.worker.run(request)
+        self.assertEqual(stronger["assignment"]["profile"]["effort"], "medium")
+        self.assertEqual(stronger["assignment"]["attempts"], 3)
+        self.assertEqual(self.kb.get("worker-budget", self.task_id)["calls"], 3)
+        self.assertFalse((Path(blocked["assignment"]["directory"]) / "explanation.md").exists())
+        self.assertTrue(self.worker.assess(self.decision(stronger))["passed"])
+
+    def test_transport_blocker_cannot_be_reclassified_as_model_quality(self):
+        request = assignment("auth-blocker")
+        with patch.dict(os.environ, {"LOOP_TEST_FAIL": "1"}):
+            blocked = self.worker.run(request)
+        self.assertNotIn("model_reported_blocker", blocked["assignment"])
+        self.assertNotIn("candidate_id", blocked["assignment"])
+        with self.assertRaisesRegex(LoopError, "Only a completed candidate"):
+            self.worker.assess({"assignment_id": request["id"], "verdict": "reject", "reason": "unsupported_claim"})
+        retry = self.worker.run(request)
+        self.assertEqual(retry["assignment"]["profile"], blocked["assignment"]["profile"])
+        self.assertEqual(self.kb.get("worker-budget", self.task_id)["calls"], 2)
+
     def test_claude_call_confines_fallback_without_editing_host_settings(self):
         settings_path = self.root / ".claude/settings.json"
         write_json(settings_path, {"fallbackModel": ["fake-unapproved-expensive"], "switchModelsOnFlag": True})
@@ -296,3 +347,40 @@ class RoutedDelegationTests(ProjectTest):
         self.assertEqual(complete["turns"], 4)
         self.assertEqual(self.kb.get("worker-budget", self.task_id)["calls"], 4)
         self.assertEqual(len(team.load(request["id"])["messages"]), 2)
+
+    def test_team_retries_disproved_blocker_only_on_its_stronger_profile(self):
+        branch = TEAM_BRANCH.replace('elif mode == "cycle":', '''elif mode == "blocked":
+        value.update(status="blocked", summary="The required source is missing.", outputs=[], changes=[],
+                     blockers=["value.py is missing."])
+        value["coverage"][0]["satisfied"] = False
+    elif mode == "cycle":''')
+        for name in ("claude", "codex"):
+            (self.bin / name).write_text(FAKE_CLI.replace('data = json.loads(prompt.split(',
+                branch + 'data = json.loads(prompt.split(', 1))
+        team = Team(self.kb, self.task_id, self.root)
+        request = plan("alpha", "beta")
+        with patch.dict(os.environ, {"LOOP_TEAM_MODE": "blocked"}):
+            blocked = team.run(request)
+        self.assertEqual(blocked["status"], "blocked")
+        self.assertEqual(blocked["candidate"]["assignment_id"], "alpha")
+        self.assertTrue(blocked["candidate"]["model_reported_blocker"])
+        self.assertEqual(team.run(request)["task_worker_calls"], 1)
+        rejection = self.decision({"assignment": blocked["candidate"]}, "reject", "unsupported_claim")
+        source = {"ref": str((self.root / "value.py").resolve()), "sha256": file_hash(self.root / "value.py")}
+        for check in rejection["checks"]:
+            check["evidence"].append(source)
+        self.worker.assess(rejection)
+        stronger = team.run(request)
+        self.assertEqual(stronger["candidate"]["assignment_id"], "alpha")
+        self.assertEqual(stronger["candidate"]["profile"]["effort"], "medium")
+        self.assertEqual(stronger["message_count"], 0)
+        self.worker.assess(self.decision({"assignment": stronger["candidate"]}))
+        independent = team.run(request)
+        self.assertEqual(independent["candidate"]["assignment_id"], "beta")
+        self.assertEqual(independent["candidate"]["profile"]["effort"], "low")
+        self.worker.assess(self.decision({"assignment": independent["candidate"]}))
+        complete = team.run(request)
+        self.assertTrue(complete["passed"], complete)
+        self.assertEqual(complete["turns"], 3)
+        self.assertEqual(complete["task_worker_calls"], 3)
+        self.assertEqual(complete["message_count"], 0)

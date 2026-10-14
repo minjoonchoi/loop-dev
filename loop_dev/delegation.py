@@ -263,7 +263,8 @@ class Delegation:
     def response(self, record, reused=False):
         fields = ("id", "task_id", "location_id", "provider", "status", "summary", "attempts", "before", "after",
                   "directory", "result", "result_digest", "result_file_hash", "candidate_id", "profile", "selection_reason", "error",
-                  "team_id", "team_turn", "assessment_ref", "feedback_revision", "feedback_substantive_revision")
+                  "team_id", "team_turn", "assessment_ref", "feedback_revision", "feedback_substantive_revision",
+                  "model_reported_blocker")
         brief = {name: record[name] for name in fields if name in record}
         brief.update(assignment_id=record["request"]["id"],
                      validation_errors=record.get("validation_errors", [])[:5],
@@ -276,6 +277,8 @@ class Delegation:
                          if record["status"] == "candidate" else
                          "Retry the same assignment at its next eligible profile within the existing budgets."
                          if record["status"] == "rejected" else
+                         "Independently verify the model-reported blocker against current evidence; reject a disproven claim as a quality failure, otherwise retain blocked."
+                         if record["status"] == "blocked" and record.get("model_reported_blocker") else
                          "Continue the parent workflow; assignment completion is not goal completion.")}
 
     def save_attempt(self, record):
@@ -366,6 +369,8 @@ class Delegation:
             raise LoopError("An assignment is immutable; use a new ID for a different instruction or scope")
         if previous and previous.get("team_id") not in (None, team["id"] if team is not None else None):
             raise LoopError("The assignment belongs to a different team; preserve its original owner")
+        if previous and previous["status"] == "blocked" and previous.get("model_reported_blocker"):
+            self.candidate(previous)
         if previous and previous["status"] in ("running", "interrupted", "applying") and not (isinstance(recover, str) and recover.strip()):
             raise LoopError("Interrupted worker: inspect logs and stop any surviving process before retrying with --recover REASON")
         before = self.observation()
@@ -537,7 +542,11 @@ class Delegation:
             self._fresh(record, dispatch)
             record["validation_errors"] = [item[:280] for item in errors]
             if not errors and value["status"] == "blocked":
-                record.update(status="blocked", error="; ".join(value["blockers"]), summary=value["summary"])
+                # A model's blocker is an unverified claim. Keep it blocked by
+                # default, while allowing the main session to reject a disproven
+                # claim using the same immutable, evidence-bound quality review.
+                record.update(status="blocked", candidate_id="candidate-" + uuid.uuid4().hex,
+                              model_reported_blocker=True, error="; ".join(value["blockers"]), summary=value["summary"])
             else:
                 record.update(status="candidate", candidate_id="candidate-" + uuid.uuid4().hex,
                               summary=("Worker output requires a structural-quality assessment." if errors else value["summary"]),
@@ -548,6 +557,8 @@ class Delegation:
                 self.control(control, db)
                 self.knowledge.put("delegation", record, db)
         except (LoopError, OSError, ValueError) as exc:
+            record.pop("candidate_id", None)
+            record.pop("model_reported_blocker", None)
             record.update(status="blocked", error=str(exc), summary="Worker execution or current evidence blocks this assignment.")
         except BaseException:
             record.update(status="interrupted", error="Inspect worker logs and remaining processes before retrying.")
@@ -637,7 +648,10 @@ class Delegation:
         if not record.get("candidate_id"):
             raise LoopError("Only a completed candidate result can be assessed")
         value = self.candidate(record)
-        if record["status"] != "candidate":
+        model_blocker = record["status"] == "blocked" and record.get("model_reported_blocker") is True
+        if model_blocker and payload.get("verdict") != "reject":
+            raise LoopError("A model-reported blocker cannot be accepted as completed work; retain blocked or reject a disproven claim")
+        if record["status"] != "candidate" and not model_blocker:
             if record.get("assessment") == payload and record["status"] in ("done", "waiting", "rejected"):
                 self.assessment_receipt(record)
                 if record["after"] != self.observation()["digest"]:

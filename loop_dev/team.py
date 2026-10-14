@@ -59,6 +59,13 @@ class Team:
             pending_assignment = self.assignment(record["inflight"]["member"])
             if pending_assignment and pending_assignment["status"] == "candidate":
                 pending_candidate = self.worker.response(pending_assignment)["assignment"]
+        if pending_candidate is None:
+            for name, member in record["members"].items():
+                if member["status"] == "blocked":
+                    claim = self.assignment(name)
+                    if claim and claim["status"] == "blocked" and claim.get("model_reported_blocker"):
+                        pending_candidate = self.worker.response(claim)["assignment"]
+                        break
         return {"passed": record["status"] == "done" and current_evidence,
                 "team_id": record["team_id"], "task_id": self.task_id, "status": record["status"],
                 "summary": record["summary"], "error": (record.get("error") or "")[:280] or None,
@@ -68,7 +75,9 @@ class Team:
                 "message_count": len(record["messages"]), "pending_message_count": len(pending),
                 "artifact": record["artifact"],
                 "candidate": pending_candidate,
-                "next": "Inspect the bounded team outcome and run the parent completion checks; team completion is not goal completion."}
+                "next": ("Independently verify the model-reported blocker; reject a disproven claim, otherwise retain blocked."
+                         if pending_candidate and pending_candidate.get("model_reported_blocker") else
+                         "Inspect the bounded team outcome and run the parent completion checks; team completion is not goal completion.")}
 
     def validate(self, plan):
         from .routing import validate_splits
@@ -190,7 +199,8 @@ class Team:
             self.save(record)
             return
         state.update(status=assignment_record["status"], summary=assignment_record["summary"],
-                     result=assignment_record.get("result"), after=assignment_record.get("after"))
+                     result=assignment_record.get("result"), after=assignment_record.get("after"),
+                     last_turn=assignment_record["team_turn"])
         if assignment_record["status"] in ("done", "waiting"):
             if (assignment_record["after"] != self.worker.observation()["digest"]
                     or assignment_record["parent_seal"] != digest(self.worker.parent()[1:])):
@@ -310,6 +320,16 @@ class Team:
             # counter reset. Waiting peer turns are resumed automatically below.
             for name, member in record["members"].items():
                 if member["status"] in ("blocked", "failed", "interrupted"):
+                    rejected = self.assignment(name)
+                    if (member["status"] == "blocked" and rejected and rejected["status"] == "rejected"
+                            and rejected.get("model_reported_blocker") is True
+                            and rejected.get("team_id") == plan["id"]
+                            and rejected.get("team_turn") == member.get("last_turn")):
+                        self.worker.candidate(rejected)
+                        self.worker.assessment_receipt(rejected)
+                        member.update(status="pending", summary="The blocker claim was rejected; retry this role within its existing budget.",
+                                      result=None, after=None)
+                        continue
                     if not isinstance(recover, str) or not recover.strip():
                         return self.status(plan["id"])
                     member["status"] = "pending"

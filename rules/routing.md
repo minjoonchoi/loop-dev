@@ -46,7 +46,7 @@ the frozen policy. Missing or unsupported configuration blocks dispatch.
 Each profile has exactly `id`, `provider` (`claude` or `codex`), `model`, `effort`,
 `capability_rank` and `cost_rank`. Ranks and requirement values are integers from
 1 to 100. Models and efforts must be explicit supported values; automatic/default
-aliases are not fallback choices. These ranks are local configuration, not measured
+aliases and workflow modes such as `opusplan` are not model choices. These ranks are local configuration, not measured
 model capability, prices or interchangeable effort levels between providers.
 Use concrete IDs available to the account and verify CLI support before execution.
 
@@ -82,13 +82,17 @@ bounded failure reason to the next attempt.
 After a recorded quality rejection, rerun the same assignment/team. The runtime picks
 the least expensive allowed profile with strictly higher capability and a different
 model or effort, on the same provider. For a recognized effort order, a higher capability
-rank on the same model cannot lower effort. A different model may use lower effort
-with a higher configured rank; the rank still does not prove measured capability.
-Immutable scope, the three-attempt limit and
-shared call/time budgets remain in force. No stronger profile or remaining budget
+rank on the same model cannot lower effort, and escalation must increase it. The known
+order is `none < minimal < low < medium < high < xhigh < max`; it does not establish
+that a model supports every level. Other supported levels and different models use
+configured ranks, which still do not prove measured capability. Immutable scope,
+the three-attempt limit and shared call/time budgets remain in force. No stronger profile or remaining budget
 means an honest blocker; new IDs must not reset either limit.
 
 Authentication, permission, unavailable models, timeout, changed source/feedback and
 ambiguous authority are blockers, not quality evidence for escalation. Resolve them
 within the existing scope or preserve the blocker. Never buy a larger model to bypass
 a missing permission, silently broaden the goal, or ask new questions after work starts.
+A model's claim that an input is missing still needs checking. Reject a disproven claim
+through `assess` before escalation; a confirmed input blocker or actual provider failure
+retains the same profile. A model-reported blocked result cannot be accepted as done.

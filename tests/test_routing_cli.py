@@ -60,7 +60,7 @@ class RoutingIntegrationTests(ProjectTest):
 
     def assessment(self, staged, root=None, verdict="accept"):
         record = self.kb.get("delegation", staged["assignment"]["id"])
-        source = (root or self.root) / "value.py"
+        source = ((root or self.root) / "value.py").resolve()
         evidence = [{"ref": str(source), "sha256": file_hash(source)}]
         checks = [{"scope": scope, "criterion_id": key, "satisfied": verdict == "accept", "evidence": evidence}
                   for scope, keys in (("assignment", [x["id"] for x in record["request"]["criteria"]]),
@@ -126,6 +126,16 @@ class RoutingIntegrationTests(ProjectTest):
         self.assertEqual(after["workers"][0]["assessment"]["verdict"], "accept")
         self.assertEqual(after["feedback_revision"], capsule["feedback_revision"])
         self.assertFalse((root / ".git").exists())
+        blocked_value = {"status": "blocked", "summary": "The required source is missing.", "outputs": [],
+                         "coverage": [{"criterion_id": "C1", "satisfied": False, "evidence": "The source could not be found."}],
+                         "changes": [], "findings": [], "blockers": ["The required source is missing."]}
+        with patch.dict(os.environ, {"LOOP_WORKER_RESULT": json.dumps(blocked_value)}):
+            blocked = work.delegate(task, self.request("inspect-blocker", goal="C1"))
+        restored = Orchestration(self.kb).context(self.session_id, task)
+        preview = next(item for item in restored["workers"] if item["assignment_id"] == "inspect-blocker")
+        self.assertTrue(preview["model_reported_blocker"])
+        self.assertEqual(preview["candidate_id"], blocked["assignment"]["candidate_id"])
+        self.assertLessEqual(len(json.dumps(restored, ensure_ascii=False, sort_keys=True, indent=2).encode()), MAX_CONTEXT_BYTES)
 
     def test_missing_or_invalid_config_blocks_start_before_worker_calls(self):
         with patch.dict(os.environ, {"LOOP_ROUTING_PROFILE": ""}):

@@ -116,6 +116,14 @@ relayed peer messages. A repeated dispatch while assessment is pending returns t
 same candidate without spending another provider call. A team returns
 `awaiting_assessment` at this boundary.
 
+A valid model-returned blocker keeps `status: blocked` and carries candidate identity,
+result pins and `model_reported_blocker: true`. Independently check its claim against
+the available inputs. If evidence disproves it, use the same `assess` schema to reject
+the unsupported claim and retry the same assignment/team on a stronger allowed profile.
+It cannot be accepted as done. A verified real blocker stays blocked; an ordinary
+retry retains its profile. Actual CLI/authentication/timeout/source-drift failures
+have no assessable candidate and do not authorize escalation.
+
 Restore `orchestration context SESSION --task TASK` and inspect the candidate's
 referenced output and criterion evidence against the parent goal. Check correctness,
 missing deliverables, unsupported claims, scope conflicts and regressions. Do not

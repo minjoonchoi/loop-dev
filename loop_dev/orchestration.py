@@ -277,6 +277,8 @@ class Orchestration:
         for field in ("candidate_id", "result_digest", "before", "after"):
             if record.get(field):
                 value[field] = record[field]
+        if type(record.get("model_reported_blocker")) is bool:
+            value["model_reported_blocker"] = record["model_reported_blocker"]
         selection = _small_text(record.get("selection_reason"))
         if selection:
             value["selection_reason"] = selection

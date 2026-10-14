@@ -76,6 +76,8 @@ on later requests.
   delivery, or reject the whole result and rerun the same assignment/team with the
   next stronger allowed profile. Retain discarded evidence and shared budgets. Handle
   configuration, permission, timeout and changed-input blockers without escalation.
+  Verify model-reported blocker claims against available inputs; reject disproven claims
+  through `assess`, but preserve real blockers and never accept blocked work as done.
   Continue until done or honestly blocked; no additional user prompt is required.
 - Keep each worker's role/scope fixed. Let the coordinator route accepted bounded peer
   questions, answers and findings. Workers cannot spawn, redelegate, ask users or change
