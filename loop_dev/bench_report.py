@@ -9,7 +9,7 @@ import uuid
 
 from . import providers
 from .benchmark import comparison_arms, goal_type, integer, read_run, source_snapshot, validate_evaluation
-from .storage import LoopError, digest, read_json, write_json, write_text
+from .storage import LoopError, digest, file_hash, read_json, write_json, write_text
 from .writing import plain
 
 RATING_SCHEMA = providers.obj({
@@ -137,7 +137,7 @@ def interval(values):
             'method': 'paired bootstrap, descriptive 95% interval; small public suites do not prove general superiority'}
 
 
-def report(root, judgment_path=None):
+def report(root, judgment_path=None, *, persist=True):
     root, spec, index, rows = read_run(root)
     cases = {c['id']: c for c in spec['suite']['cases']}
     arms = comparison_arms(spec)
@@ -235,6 +235,19 @@ def report(root, judgment_path=None):
                           'activation_valid': r['activation_valid'], 'protected_valid': r['protected_valid'],
                           'errors': r['errors'], 'grading_error': r.get('grading_error', False),
                           'seconds': r['seconds'], 'usage': r['usage'], **scored[r['id']]} for r in rows], 'reviewer': reviewer}
+    if not persist:
+        return value
+    check = read_json(root / 'check.json') if (root / 'check.json').exists() else {}
+    if check.get('evolution_hash') and file_hash(root / 'evolution.json') != check['evolution_hash']:
+        raise LoopError('Before/after evidence changed or is missing')
+    if (root / 'evolution.json').exists():
+        from .bench_evolution import attach, evaluate
+        value = attach(value, evaluate(root, spec, value, read_json(root / 'evolution.json')))
+        verdict = value['verdict']
+    if check.get('failure'):
+        missing.append('Full benchmark check failed; rerun the complete experiment')
+        verdict = value['verdict'] = 'inconclusive'
+        value['passed'] = False
     write_json(root / 'report.json', value)
     lines = ['# Harness benchmark', '', '**' + verdict + '**', '',
              'Scope: ' + plain(spec['suite']['id']) + ' · ' + ', '.join(spec['providers']) + f" · {spec['repeats']} repetitions", '',

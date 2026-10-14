@@ -27,7 +27,10 @@ This repository builds the portable development harness, not a target applicatio
 - Do not claim live provider integration was tested when only fake CLIs were used.
 - When changing/evaluating harness behavior, use rules/benchmark.md. Keep comparison
   criteria fixed, compare the same tasks with and without the current harness
-  (plain/candidate), and use bench gate
+  (plain/candidate), and compare against the last passing version using bench check's
+  automatic history. Before editing, establish a live baseline if this source/profile
+  has none; after editing, rerun the same CLI configuration. Keep rejected measurements,
+  never call a tie or a new profile an improvement, and use bench gate
   before promoting a change as benchmark-validated. If live CLIs are unavailable,
   complete implementation checks and explicitly retain the unverified quality status.
 - Do not overwrite existing project instructions, settings, hooks or user changes.

@@ -40,6 +40,7 @@ def parser():
         if name in ("run", "check"):
             sub.add_argument("--output", type=Path, required=name == "run")
         if name == "check":
+            sub.add_argument("--history", type=Path, help="Persistent before/after baselines; defaults beside the candidate source")
             sub.add_argument("--judge-provider", choices=("claude", "codex"), default="codex")
             sub.add_argument("--judge-model", help="Defaults to the chosen judge provider's model")
             sub.add_argument("--judge-effort", help="Defaults to the chosen judge provider's effort")
@@ -211,7 +212,8 @@ def main(argv=None):
                     candidate=args.candidate, suite=args.suite,
                     providers=args.provider, repeats=args.repeats, seed=args.seed, environment=args.environment,
                     output=args.output, judge_provider=args.judge_provider, judge_model=args.judge_model,
-                    judge_effort=args.judge_effort, judge_repeats=args.judge_repeats, dry_run=args.dry_run)
+                    judge_effort=args.judge_effort, judge_repeats=args.judge_repeats, dry_run=args.dry_run,
+                    history=args.history)
             elif cmd in ("plan", "run"):
                 values = [args.suite, args.candidate,
                           {"codex": args.codex_model, "claude": args.claude_model},

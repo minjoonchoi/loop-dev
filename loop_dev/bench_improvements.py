@@ -127,6 +127,10 @@ def write_report(root, spec, value=None, failure=None):
     if failure:
         for row in outcomes:
             row['status'] = 'inconclusive'
+    elif (value.get('evolution') or {}).get('missing'):
+        for row in outcomes:
+            if row['status'] != 'regression':
+                row['status'] = 'inconclusive'
     items = recommendations(spec, value, failure)
     result = {'verdict': verdict, 'passed': not failure and value.get('passed', False),
         'manifest_hash': value.get('manifest_hash'), 'failure': failure,
@@ -135,6 +139,7 @@ def write_report(root, spec, value=None, failure=None):
         'evaluation': spec.get('evaluation') or value.get('reviewer'),
         'goal_types': sorted({goal_type(c) for c in spec['suite']['cases']}),
         'comparisons': groups, 'type_outcomes': outcomes, 'improvements': items,
+        'evolution': value.get('evolution'), 'on_off_verdict': value.get('on_off_verdict', verdict),
         'missing': value.get('missing', []), 'scope': value.get('scope'),
         'limits': ['같은 이름의 effort가 두 제공자에서 같은 연산량을 뜻하지 않습니다.',
                    '모델 설정은 요청값입니다. 지원 여부는 CLI가 검증하며 자동 대체하지 않습니다.',
@@ -148,6 +153,20 @@ def write_report(root, spec, value=None, failure=None):
     evaluation = result['evaluation']
     if evaluation:
         lines.extend(['', '공통 평가자: ' + plain(' / '.join(str(evaluation.get(k, '미지정')) for k in ('provider', 'model', 'effort', 'repeats')))])
+    evolution = result['evolution']
+    if evolution:
+        lines.extend(['', '## 수정 전후', '',
+            '사용/미사용: **' + result['on_off_verdict'] + '** · 전후: **' + evolution['verdict'] + '**',
+            '기준 갱신: ' + ('예' if evolution.get('baseline_updated') and not failure else '아니오') +
+            ' · 이전 근거: ' + (plain(evolution['before']['run']) if evolution['before'] else '없음 — 첫 기준 수집'), '',
+            '| 유형 / 제공자 | 품질 전 → 후 | 하네스 효과 변화 | 초 전 → 후 | 질문 전 → 후 |',
+            '| --- | --- | --- | --- | --- |'])
+        for row in evolution['type_outcomes']:
+            lines.append(f"| {row['goal_type']} / {row['provider']} | {row['before_quality']} → {row['after_quality']} | "
+                f"{row['harness_gain_delta']} | {row['before_seconds']} → {row['after_seconds']} | "
+                f"{row['before_questions']} → {row['after_questions']} |")
+        lines.extend(['', '하네스 효과 변화 = 사용 점수 변화 − 미사용 점수 변화. 동일 결과와 첫 기준 수집은 개선 증거가 아닙니다.',
+            '전후의 모든 평가 항목을 확인하며, 조건이 달라지면 별도의 기준을 수집합니다. [비교 기준](evolution.json)'])
     lines.extend(['', '## 설정별 결과', '', '| 제공자 / 비교군 | 완료 / 예정 | 품질 평균 (채점 수) | 평균 초 | 평균 호출 수 | 평균 추가 질문 |',
                   '| --- | --- | --- | --- | --- | --- |'])
     for row in groups:

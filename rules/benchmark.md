@@ -13,6 +13,14 @@ work does not need a benchmark experiment. See the source repository's
   `--dry-run` validates the full configuration without model calls.
   The CLI manages provider sessions and skill activation; no interactive conversation
   or baseline commit selection is required from the user.
+- Before changing harness files, reuse the matching source/profile's passing result
+  from automatic history. If none exists, run `bench check` before editing to measure
+  the starting point. After editing, run the same command with a fresh output directory.
+  The CLI selects the last passing result for the same suite, model/effort, judge,
+  repetitions, seed, budgets, host configuration and CLI versions. No manual SHA or
+  result selection is required. Retain the history and referenced run directories.
+  If live execution is unavailable, finish implementation checks but record the
+  before/after quality comparison as unverified; do not invent a baseline.
 - Use identical fixtures, requests, profiles and budgets for plain/candidate.
   Use a dedicated host profile without an automatically activated global harness.
   Preserve existing permissions, credentials and hooks; do not bypass nested-CLI limits.
@@ -46,6 +54,13 @@ work does not need a benchmark experiment. See the source repository's
   is benchmark-validated or promoting it under that claim. Nonzero means no promotion.
   `non_regressing` is not `improved`; qualify every claim by suite/models/repetitions.
   Unit/fake-CLI success proves implementation behavior, not live model quality.
+- A full check must pass both the current on/off gate and the before/after gate.
+  Compare every outcome criterion, additional user requests and duration limits with
+  the preceding accepted run. An improvement requires positive paired quality and
+  positive change in the on/off benefit; a weaker plain run alone is not a gain.
+  A first run or changed experiment profile establishes a separate baseline, not an
+  improvement. A passing tie is `non_regressing`. Only passing changed sources advance
+  the baseline; failed, incomplete, simulated or concurrently superseded runs do not.
 
 ## Improve rules from evidence
 
@@ -59,7 +74,10 @@ work does not need a benchmark experiment. See the source repository's
    observable change using `bench proposal`. Treat it as a hypothesis in knowledge.
 3. Delegate only the identified change with exact scope and completion criteria.
    Never weaken acceptance, remove failing cases or put case-specific answers in rules.
-4. Rerun both conditions under unchanged criteria, including all holdout cases.
+4. Rerun `bench check` under unchanged criteria, including all holdout cases. Read
+   both on/off and before/after results in `improvements.md`; the CLI preserves the
+   old baseline on failure. Later `bench gate` rechecks both comparisons and their
+   original evidence. Do not delete history to bypass a regression.
    Repeated tuning against exposed holdouts requires fresh independently held cases
    before a broader claim. Keep rejected proposals and results as historical evidence.
 5. Accept only with fresh passing evidence and the existing delivery authority.

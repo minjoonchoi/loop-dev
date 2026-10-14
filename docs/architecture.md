@@ -349,6 +349,30 @@ and revalidation remain distinct JSON fields. The human view shows at most five 
 the full JSON preserves evidence without additional model calls. No rule change is
 invented for equal valid results, and a failed final gate cannot leave a passing check summary.
 
+`bench_evolution.py` keeps automatic before/after baselines outside the source and suite.
+Before changing the harness, the orchestrator establishes a passing live measurement
+of the starting source if one is unavailable. Each full check selects the last passing
+run with identical suite hash, models/efforts, judge settings, providers, repeats,
+seed, budgets, host configuration and CLI versions. A new profile starts a separate
+series and cannot establish improvement over a different profile.
+The after run still executes only plain/candidate; the before run's sealed evidence
+is reused, without another arm or Git revision lookup. Reports pair case/provider/
+repeat outcomes across runs and show quality, elapsed time, calls, extra questions
+and the change in on/off benefit. Any criterion loss, additional questions or duration
+limit violation blocks advancement. Improvement requires positive descriptive intervals
+for both candidate quality and the change in on/off benefit, with a changed source.
+Ties are non-regressing, never improved. Same-source reruns do not replace a baseline.
+
+`evolution.json` freezes the predecessor and its manifest, index, judgments, final check
+and comparison seals. `bench gate` revalidates that evidence as well as the current
+source/suite; removing a temporal comparison cannot restore an on/off-only pass.
+`baselines.json` stores one accepted pointer per profile. A short file lock and comparison
+with the pointer observed before execution prevent concurrent runs from silently replacing
+each other. All reports and final checks are written before advancing the pointer.
+Regression, missing evidence and simulations retain the old pointer. Old run directories
+remain required evidence. The deterministic improvement report includes both comparisons;
+no extra model calls, rule rewriting, merge or deployment follow from history updates.
+
 `bench proposal` stores a bounded rule hypothesis with affected cases, their scores,
 regressions and frozen source/suite hashes. It does not edit rules automatically.
 The orchestrator implements a scoped change and reruns both conditions, calibration
