@@ -16,6 +16,10 @@ This division makes the same workflow available in both environments while keepi
 the user's responsibility to the goal and genuinely human-owned decisions. Calling
 the CLI is an internal agent action, not a sequence of prompts the user must provide.
 
+Harness benchmarking also has a standalone terminal entry point: `scripts/benchmark.py`.
+It manages its own provider conversations; users do not need to open a chat or activate
+the harness skill before running a benchmark.
+
 The user explicitly starts the loop-dev skill once. Installed AGENTS.md and CLAUDE.md
 then route every input in that conversation through `work.md`, including new goals,
 questions, documents, corrections and stops. A goal finishing, a task kind or directory
@@ -308,8 +312,9 @@ Benchmarking is separate from the harness's own completion gates. `scripts/bench
 invokes `bench check`: freeze configuration, run, judge, gate and produce improvements.
 `bench_check.py` owns this sequence and records an inconclusive result when a phase fails;
 an unjudged run does not stop the sequence. `bench plan/run`
-freezes a suite, current candidate and reference Git snapshot; every case/provider/
-repetition runs plain, reference and candidate in seeded random order. Inputs, model
+freezes a suite and current harness file snapshot; every case/provider/
+repetition runs plain and candidate in seeded random order. No baseline commit is selected
+or read. The source snapshot includes uncommitted changes and is hashed automatically. Inputs, model
 profiles and budgets match. Trial-local CLI wrappers enforce model IDs and efforts and reserve
 a shared call budget for the conversation and its nested workers/reviewers. Existing
 host policy and authentication remain in effect. No SDK or global hook is installed.
@@ -331,7 +336,7 @@ later assessments must match that profile. Both vendors' results use the same ju
 Disagreements use the lower score. Human assessments use the same packet-bound schema.
 Treatment inference from prose and model judging errors remain possible.
 
-Reports compare each candidate to both controls and retain separate quality, user
+Reports compare each candidate to its plain counterpart and retain separate quality, user
 intervention, duration and available usage evidence. Mandatory outcomes, a quality
 floor, paired losses and excess overhead block promotion regardless of average gain.
 Incomplete execution/evidence, failed controls and fake-CLI runs cannot establish an
@@ -346,10 +351,14 @@ invented for equal valid results, and a failed final gate cannot leave a passing
 
 `bench proposal` stores a bounded rule hypothesis with affected cases, their scores,
 regressions and frozen source/suite hashes. It does not edit rules automatically.
-The orchestrator implements a scoped change and reruns both controls, calibration
+The orchestrator implements a scoped change and reruns both conditions, calibration
 and holdout cases under unchanged criteria. Public starter holdouts are regression
 examples; broader claims need representative independently held tasks. Unit CI does
 not run paid providers or substitute for this live quality gate. See `rules/benchmark.md`.
+
+Version 2 manifests explicitly fix `arms` to `plain` and `candidate`. Historical
+version 1 reports keep their original three conditions when read; a missing historical
+reference cannot be silently treated as a complete two-condition experiment.
 
 ## Explicit limits
 

@@ -22,14 +22,13 @@ def parser():
     result.add_argument("--root", type=Path, default=Path.cwd(), help="Target repository root")
     result.add_argument("--knowledge-home", type=Path, help="Local knowledge directory (default: LOOP_KB_HOME or ~/.local/share/loop-dev)")
     commands = result.add_subparsers(dest="command", required=True)
-    bench = commands.add_parser("bench", help="Compare plain, reference and candidate harness outcomes")
+    bench = commands.add_parser("bench", help="Compare the same tasks with and without the current harness")
     bench_commands = bench.add_subparsers(dest="bench_command", required=True)
     source = Path(__file__).resolve().parent.parent
     for name in ("plan", "run", "check"):
         sub = bench_commands.add_parser(name)
         sub.add_argument("--suite", type=Path, required=name != "check", default=source / "benchmarks/suite.json")
         sub.add_argument("--candidate", type=Path, required=name != "check", default=source)
-        sub.add_argument("--reference-ref", required=name != "check", default="HEAD", help="Existing Git commit in the candidate repository")
         sub.add_argument("--codex-model", required=True)
         sub.add_argument("--claude-model", required=True)
         sub.add_argument("--codex-effort", required=True)
@@ -209,18 +208,18 @@ def main(argv=None):
                 from .bench_check import check
                 output = check({"codex": args.codex_model, "claude": args.claude_model},
                     {"codex": args.codex_effort, "claude": args.claude_effort},
-                    candidate=args.candidate, suite=args.suite, reference_ref=args.reference_ref,
+                    candidate=args.candidate, suite=args.suite,
                     providers=args.provider, repeats=args.repeats, seed=args.seed, environment=args.environment,
                     output=args.output, judge_provider=args.judge_provider, judge_model=args.judge_model,
                     judge_effort=args.judge_effort, judge_repeats=args.judge_repeats, dry_run=args.dry_run)
             elif cmd in ("plan", "run"):
-                values = [args.suite, args.candidate, args.reference_ref,
+                values = [args.suite, args.candidate,
                           {"codex": args.codex_model, "claude": args.claude_model},
                           args.provider, args.repeats, args.seed, args.environment]
                 efforts = {"codex": args.codex_effort, "claude": args.claude_effort}
                 output = benchmark.prepare(*values, efforts=efforts) if cmd == "plan" else benchmark.run(*values, args.output, efforts=efforts)
                 if cmd == "plan":
-                    output["source"] = {k: {p: v[p] for p in ("hash", "ref")} for k, v in output["source"].items()}
+                    output["source"] = {k: {"hash": v["hash"]} for k, v in output["source"].items()}
             elif cmd == "judge":
                 output = bench_report.judge(args.run, args.provider, args.model, args.repeats, effort=args.effort)
             elif cmd == "gate":

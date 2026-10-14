@@ -1,6 +1,6 @@
 # 하네스 품질 벤치마크
 
-**같은 요청의 결과물을 하네스 없음·기존 버전·변경 버전으로 비교합니다.**
+**같은 작업을 현재 하네스를 쓰고 안 쓰고 각각 실행해 결과물을 비교합니다.**
 하네스의 완료 선언이나 실행한 도구 수에는 점수를 주지 않습니다. 실제 기능 검사와
 결과물 평가를 통과해야 하며, 특정 과제의 악화를 전체 평균으로 숨기지 않습니다.
 
@@ -8,11 +8,10 @@
 
 | 대상 | 실행 조건 | 확인할 질문 |
 | --- | --- | --- |
-| `plain` | 프로젝트 지침만 있는 새 작업 공간 | 하네스 없이도 더 잘 끝내는가? |
-| `reference` | 지정한 Git 커밋의 하네스 설치·스킬 시작 | 기존 하네스보다 나빠졌는가? |
-| `candidate` | 현재 작업 트리의 하네스 설치·스킬 시작 | 변경으로 실제 결과가 좋아졌는가? |
+| `plain` | 프로젝트 지침만 있는 새 작업 공간 | 하네스 없이 얻는 결과는 무엇인가? |
+| `candidate` | 현재 파일의 하네스 설치·스킬 시작 | 하네스를 사용하면 실제 결과가 좋아지는가? |
 
-세 대상은 같은 초기 파일·요청·공급자별 모델·effort·호출 한도·시간 한도를 사용합니다.
+두 조건은 같은 초기 파일·요청·공급자별 모델·effort·호출 한도·시간 한도를 사용합니다.
 각 실행은 새 Git 저장소, 공급자 대화, 지식베이스를 갖습니다. 한 과제의 후속 입력은
 같은 실제 Claude/Codex 대화를 재개합니다. 폴더가 바뀌어도 세션은 유지합니다.
 과제·반복·대상 순서를 고정 시드로 섞어 실행 순서 영향을 줄입니다.
@@ -42,21 +41,15 @@
 짝지은 점수 차이의 bootstrap 95% 구간은 해당 과제의 기술 통계이며, 적은 공개 과제로
 다른 프로젝트나 모델에서도 더 좋다고 일반화할 수 없습니다.
 
-## 요청과 내부 실행
+## 터미널에서 실행
 
-활성화된 대화에서는 다음처럼 요청합니다.
+벤치마크는 독립 CLI입니다. 대화 세션을 직접 열거나 스킬을 미리 활성화하지 않아도 됩니다.
+스크립트가 로그인된 Claude/Codex CLI의 실행과 평가용 세션을 관리합니다. 기준 커밋을
+선택하지 않고 현재 하네스 파일을 복사해 사용/미사용 두 조건만 실행합니다.
 
-> 이번 규칙 변경이 하네스 없이 할 때와 기존 버전보다 나빠지지 않았는지 벤치로 확인해 줘.
-> 악화된 과제는 원인을 찾아 규칙을 수정하고 같은 기준으로 다시 확인해 줘.
-
-대화 에이전트가 비교 기준 커밋, 기존 모델 설정, 과제와 실행 예산을 확인하고 명령을
-관리합니다. 이미 정한 조건은 다시 묻지 않습니다. 검증되지 않은 모델 이름이나 권한을
-추측하지 않으며, 사용자가 정해야 할 미해결 조건만 시작 전에 구체화합니다.
-벤치는 상시 실행 훅이 아닙니다. 하네스 변경 검증이나 명시적인 평가 요청에 사용합니다.
-
-다음은 에이전트가 실행하는 내부 명령 예시입니다. 모델 변수는 해당 계정에서 사용 가능한
-구체적인 모델 ID, effort 변수는 그 모델과 CLI가 지원하는 명시적 수준, 기준 변수는 변경 전
-검증 대상 커밋 SHA로 설정합니다. 결과 디렉터리는 소스·과제 디렉터리 밖의 새 경로여야 합니다.
+모델 변수는 해당 계정에서 사용 가능한 구체적인 모델 ID, effort 변수는 그 모델과 CLI가
+지원하는 명시적 수준으로 설정합니다. 결과 디렉터리는 소스·과제 디렉터리 밖의 새 경로여야 합니다.
+대화로 벤치를 요청하면 에이전트가 같은 CLI를 실행합니다. 상시 실행 훅은 없습니다.
 
 ### 한 번에 실행
 
@@ -64,7 +57,6 @@
 python3 scripts/benchmark.py \
   --claude-model "$BENCH_CLAUDE_MODEL" --claude-effort "$BENCH_CLAUDE_EFFORT" \
   --codex-model "$BENCH_CODEX_MODEL" --codex-effort "$BENCH_CODEX_EFFORT" \
-  --reference-ref "$BENCH_REFERENCE_SHA" \
   --output "$BENCH_RUN_DIR"
 ```
 
@@ -76,15 +68,16 @@ python3 scripts/benchmark.py \
 | --- | --- |
 | 목표 유형 | 개발·문서·설명, 과제 6개; `--suite`로 변경 |
 | 실행 제공자 | Claude와 Codex 모두; `--provider`로 선택 |
-| 후보 / 기준 | 스크립트가 속한 소스 체크아웃 / `HEAD`; `--candidate`, `--reference-ref` |
+| 평가할 하네스 | 스크립트가 속한 현재 소스 디렉터리; `--candidate`로 변경 |
 | 반복 / 순서 | 3회 / 시드 0; `--repeats`, `--seed` |
 | 공통 평가자 | 지정한 Codex 모델·effort, 독립 평가 2회 |
 | 평가자 변경 | `--judge-provider`, `--judge-model`, `--judge-effort`, `--judge-repeats` |
 | 결과 경로 | 소스 옆 `loop-dev-benchmarks/<시각>-<실행 ID>/`; `--output` |
 | 환경 기록 | 현재 OS·아키텍처와 CLI 프로필 해시; `--environment`로 설명 지정 |
 
-`HEAD`가 현재 변경과 같으면 reference와 candidate도 같으므로, 규칙 변경 비교에는 변경 전
-커밋을 명시합니다. 실행 전에 `--dry-run`으로 목표 유형, 설정, 평가자와 호출/시간 상한을
+커밋되지 않은 수정도 현재 파일 그대로 평가합니다. 소스·과제·결과의 해시는 자동 기록하며,
+평가 후 파일이 바뀌면 기존 통과 결과를 현재 변경의 근거로 사용할 수 없습니다.
+실행 전에 `--dry-run`으로 목표 유형, 두 실행 조건, 설정, 평가자와 호출/시간 상한을
 확인할 수 있습니다. 이 옵션은 모델 호출이나 결과 디렉터리 생성을 하지 않습니다.
 
 평가자 제공자·모델·effort·반복 수는 실행 manifest에 먼저 고정합니다. 모든 실행 제공자와
@@ -110,14 +103,14 @@ Claude에는 `--effort`와 해당 호출의 `CLAUDE_CODE_EFFORT_LEVEL`을 같은
 
 ```sh
 python3 scripts/loop.py bench plan \
-  --suite benchmarks/suite.json --candidate . --reference-ref "$BENCH_REFERENCE_SHA" \
+  --suite benchmarks/suite.json --candidate . \
   --codex-model "$BENCH_CODEX_MODEL" --claude-model "$BENCH_CLAUDE_MODEL" \
   --codex-effort "$BENCH_CODEX_EFFORT" --claude-effort "$BENCH_CLAUDE_EFFORT" \
   --provider codex --provider claude --repeats 3 --seed 17 \
   --environment "dedicated benchmark profile; fixed host and provider settings"
 
 python3 scripts/loop.py bench run \
-  --suite benchmarks/suite.json --candidate . --reference-ref "$BENCH_REFERENCE_SHA" \
+  --suite benchmarks/suite.json --candidate . \
   --codex-model "$BENCH_CODEX_MODEL" --claude-model "$BENCH_CLAUDE_MODEL" \
   --codex-effort "$BENCH_CODEX_EFFORT" --claude-effort "$BENCH_CLAUDE_EFFORT" \
   --provider codex --provider claude --repeats 3 --seed 17 \
@@ -131,8 +124,8 @@ python3 scripts/loop.py bench gate "$BENCH_RUN_DIR" \
   --candidate . --suite benchmarks/suite.json
 ```
 
-기본 과제 6개 × 대화 공급자 2개 × 반복 3회 × 대상 3개 = **108회 과제 실행**입니다.
-별도 결과물 평가는 기본 216회입니다. `plan`에 호출 수 상한과 과제 시간 상한을 표시합니다.
+기본 과제 6개 × 대화 공급자 2개 × 반복 3회 × 사용/미사용 2조건 = **72회 과제 실행**입니다.
+별도 결과물 평가는 기본 144회입니다. `plan`에 호출 수 상한과 과제 시간 상한을 표시합니다.
 과제당 기본 한도는 하위 작업을 포함해 CLI 60회·20분입니다. 모델 비용과 내부 추론량은
 공급자마다 다르므로 같은 모델과 상한을 맞춰도 정확히 같은 지출을 보장하지 않습니다.
 전송·구성 확인은 `--repeats 1`로 가능하지만 품질 통과 근거로 사용할 수 없습니다.
@@ -175,7 +168,7 @@ python3 scripts/loop.py bench gate "$BENCH_RUN_DIR" \
    회귀 근거, 소스·평가 기준 해시가 함께 고정됩니다.
 3. 범위가 분명한 변경을 구현합니다. 점수를 올리기 위해 검사·가중치·완료 기준을 완화하거나
    과제의 정답을 일반 규칙에 넣지 않습니다.
-4. 같은 기준 커밋·모델·과제로 새 디렉터리에서 세 대상을 모두 재실행합니다.
+4. 같은 모델·effort·과제로 새 디렉터리에서 하네스 사용/미사용 두 조건을 다시 실행합니다.
    조정용 과제와 재검증용 과제를 모두 통과해야 합니다.
 5. 현재 코드에 대해 `bench gate`를 실행합니다. 코드·규칙·스킬·평가 기준·검사·초기 파일이
    측정 후 바뀌면 이전 결과를 재사용할 수 없습니다. 병합·배포는 별도의 허용 범위를 따릅니다.
@@ -190,7 +183,7 @@ python3 scripts/loop.py bench gate "$BENCH_RUN_DIR" \
 않습니다. 기본 구성은 `development`, `document`, `explanation`이며 `research`, `review`,
 `planning`도 지원합니다. 기존 `session` 사례는 설명 목표의 세션 재사용 시나리오이므로
 `explanation`에 합산합니다. 세션을 바꾸거나 같은 목표를 반복한 것을 새 목표 유형으로 세지 않습니다.
-유효한 결과를 위해 모든 유형을 선택한 제공자·세 비교군·반복에서 완료하고 채점해야 합니다.
+유효한 결과를 위해 모든 유형을 선택한 제공자·두 실행 조건·반복에서 완료하고 채점해야 합니다.
 
 기본 과제는 저장/재조회, 입력 오류와 데이터 보존, 소스 설명, 실행 가능한 문서 예제,
 작은 수정, 폴더 이동과 지식 최신화를 다룹니다. `calibration`은 원인 분석에,

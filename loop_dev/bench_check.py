@@ -10,7 +10,7 @@ from . import benchmark, bench_report, bench_improvements
 from .storage import LoopError, write_json
 
 
-def check(models, efforts, *, candidate=None, suite=None, reference_ref='HEAD', providers=None,
+def check(models, efforts, *, candidate=None, suite=None, providers=None,
           repeats=3, seed=0, environment=None, output=None, judge_provider='codex', judge_model=None,
           judge_effort=None, judge_repeats=2, dry_run=False, executables=None):
     source = Path(__file__).resolve().parent.parent
@@ -22,8 +22,8 @@ def check(models, efforts, *, candidate=None, suite=None, reference_ref='HEAD', 
         raise LoopError('Select Claude or Codex as the common judge')
     evaluation = {'provider': judge_provider, 'model': models[judge_provider] if judge_model is None else judge_model,
                   'effort': efforts.get(judge_provider) if judge_effort is None else judge_effort, 'repeats': judge_repeats}
-    spec = benchmark.prepare(suite, candidate, reference_ref, models, providers, repeats, seed, environment, efforts, evaluation)
-    spec['source'] = {k: {p: v[p] for p in ('hash', 'ref')} for k, v in spec['source'].items()}
+    spec = benchmark.prepare(suite, candidate, models, providers, repeats, seed, environment, efforts, evaluation)
+    spec['source'] = {k: {'hash': v['hash']} for k, v in spec['source'].items()}
     output = Path(output).resolve() if output else candidate.parent / 'loop-dev-benchmarks' / (
         datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '-' + uuid.uuid4().hex[:8])
     if output.exists() or output.is_relative_to(candidate) or output.is_relative_to(suite.parent):
@@ -33,7 +33,7 @@ def check(models, efforts, *, candidate=None, suite=None, reference_ref='HEAD', 
     phase, value, failure = 'run', None, None
     try:
         # An unjudged run is normally inconclusive; its verdict must not stop judging.
-        benchmark.run(suite, candidate, spec['source']['reference']['ref'], models, providers, repeats, seed, environment,
+        benchmark.run(suite, candidate, models, providers, repeats, seed, environment,
                       output, executables=executables, efforts=efforts, evaluation=evaluation)
         phase = 'judge'
         bench_report.judge(output, judge_provider, evaluation['model'], judge_repeats, effort=evaluation['effort'])
@@ -54,6 +54,7 @@ def check(models, efforts, *, candidate=None, suite=None, reference_ref='HEAD', 
     result = {'phase': phase, 'verdict': 'inconclusive' if failure else value['verdict'],
               'passed': not failure and value['passed'], 'failure': failure,
               'output': str(output), 'evaluation': evaluation, 'goal_types': benchmark.goal_types(spec['suite']),
+              'arms': list(benchmark.comparison_arms(spec)),
               'models': models, 'efforts': efforts, 'manifest_hash': value.get('manifest_hash') if value else None,
               'improvements': str(output / 'improvements.md')}
     write_json(output / 'check.json', result)

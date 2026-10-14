@@ -1,17 +1,19 @@
 # Evaluate the harness by delivered outcomes
 
 Use this rule when evaluating or changing loop-dev itself. Ordinary application
-work does not need a three-arm experiment. See the source repository's
+work does not need a benchmark experiment. See the source repository's
 `docs/benchmark.md` and `benchmarks/suite.json` for the protocol and starter cases.
 
 ## Before execution
 
-- Restore prior benchmark decisions. Fix the candidate, pre-change reference Git
-  commit, suite, concrete model IDs and explicit efforts for BOTH providers, judge
+- Restore prior benchmark decisions. Fix the current harness snapshot,
+  suite, concrete model IDs and explicit efforts for BOTH providers, judge
   provider/model/effort, environment, repetitions and call/time budgets. Use
   `scripts/benchmark.py` (`bench check`) for run → judge → gate → improvement report;
   `--dry-run` validates the full configuration without model calls.
-- Use identical fixtures, requests, profiles and budgets for plain/reference/candidate.
+  The CLI manages provider sessions and skill activation; no interactive conversation
+  or baseline commit selection is required from the user.
+- Use identical fixtures, requests, profiles and budgets for plain/candidate.
   Use a dedicated host profile without an automatically activated global harness.
   Preserve existing permissions, credentials and hooks; do not bypass nested-CLI limits.
 - Keep outcome checks outside the agent workspace. Freeze the rubric, weights,
@@ -27,7 +29,7 @@ work does not need a three-arm experiment. See the source repository's
 
 ## Evaluate and report
 
-- Run all three arms in fresh workspaces and conversations; resume the same provider
+- Run both conditions in fresh workspaces and conversations; resume the same provider
   session for later turns within a case. Keep knowledge separate between arms.
 - Run external checks, then `bench judge` on blinded packets with fixed anchored
   criteria and repeated independent assessments. Inspect disagreement and evidence.
@@ -36,7 +38,7 @@ work does not need a three-arm experiment. See the source repository's
 - Preserve failed attempts. Missing CLI/auth/permissions, interrupted runs, missing
   ratings, invalid activation, altered evidence and simulations do not count as passes.
   Never claim superiority because a control could not execute.
-- Inspect each case against plain AND reference. Report quality, extra user requests,
+- Compare each harness-assisted result with its plain counterpart. Report quality, extra user requests,
   elapsed time and known usage separately; unavailable billing remains unknown.
   Retain results per goal type and provider/model/effort. Every selected type must
   execute across all arms and repetitions. An aggregate gain cannot hide a type's loss.
@@ -57,7 +59,7 @@ work does not need a three-arm experiment. See the source repository's
    observable change using `bench proposal`. Treat it as a hypothesis in knowledge.
 3. Delegate only the identified change with exact scope and completion criteria.
    Never weaken acceptance, remove failing cases or put case-specific answers in rules.
-4. Rerun unchanged criteria against both controls, including all holdout cases.
+4. Rerun both conditions under unchanged criteria, including all holdout cases.
    Repeated tuning against exposed holdouts requires fresh independently held cases
    before a broader claim. Keep rejected proposals and results as historical evidence.
 5. Accept only with fresh passing evidence and the existing delivery authority.

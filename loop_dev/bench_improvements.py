@@ -5,9 +5,11 @@ from collections import defaultdict
 from pathlib import Path
 import statistics
 
-from .benchmark import ARMS, goal_type
+from .benchmark import comparison_arms, goal_type
 from .storage import digest, write_json, write_text
 from .writing import plain
+
+ARM_LABELS = {'plain': '하네스 미사용', 'candidate': '하네스 사용', 'reference': '이전 버전'}
 
 
 def mean(values):
@@ -21,12 +23,14 @@ def evidence(sample):
 def comparisons(spec, value):
     """Expose denominators and every goal type; incomplete samples are not zero scores."""
     samples = value.get('samples', [])
+    arms = comparison_arms(spec)
+    controls = [arm for arm in arms if arm != 'candidate']
     types = sorted({goal_type(c) for c in spec['suite']['cases']})
     groups, outcomes = [], []
     for kind in [None, *types]:
         cases = [c for c in spec['suite']['cases'] if kind is None or goal_type(c) == kind]
         for provider in spec['providers']:
-            for arm in ARMS:
+            for arm in arms:
                 rows = [s for s in samples if s['provider'] == provider and s['arm'] == arm
                         and (kind is None or s['goal_type'] == kind)]
                 rated = [s for s in rows if s['quality'] is not None and not s['missing'] and not s['grading_error']]
@@ -41,7 +45,7 @@ def comparisons(spec, value):
             if kind is not None:
                 rows = [s for s in samples if s['provider'] == provider and s['goal_type'] == kind]
                 findings = [r for r in value.get('regressions', []) if r['provider'] == provider and r['goal_type'] == kind]
-                incomplete = (len(rows) != len(cases) * spec['repeats'] * len(ARMS) or len(types) < 2 or value.get('run_complete') is False
+                incomplete = (len(rows) != len(cases) * spec['repeats'] * len(arms) or len(types) < 2 or value.get('run_complete') is False
                     or spec.get('mode') != 'live' or spec['repeats'] < spec['suite']['policy']['min_repeats']
                     or any(s['missing'] or s['grading_error'] or s['status'] != 'completed' or not s['activation_valid']
                            or not s['protected_valid'] or not s['usage']['calls_complete'] for s in rows))
@@ -50,9 +54,9 @@ def comparisons(spec, value):
                     'status': 'regression' if findings else 'inconclusive' if incomplete else 'non_regressing',
                     'case_ids': [c['id'] for c in cases], 'regressions': len(findings),
                     'completed': sum(s['status'] == 'completed' for s in rows),
-                    'expected': len(cases) * spec['repeats'] * len(ARMS),
+                    'expected': len(cases) * spec['repeats'] * len(arms),
                     'quality_delta': {control: mean([c['quality_delta'] for c in paired if c['control'] == control
-                                      and c['quality_delta'] is not None]) for control in ('plain', 'reference')}})
+                                      and c['quality_delta'] is not None]) for control in controls}})
     return groups, outcomes
 
 
@@ -73,7 +77,7 @@ def recommendations(spec, value, failure=None):
         add('P0', '누락된 평가 근거 확보', '\n'.join(value['missing']),
             '누락된 측정이나 실패한 대조군으로 하네스의 우열을 판단할 수 없습니다.',
             '실행·채점·활성화·사용량 기록 중 누락된 근거를 복구합니다. 시뮬레이션이면 실제 CLI로 실행합니다.',
-            '두 유형 이상에서 모든 제공자·세 비교군·반복의 근거가 갖춰지고 gate가 통과해야 합니다.',
+            '두 유형 이상에서 모든 제공자·실험 조건·반복의 근거가 갖춰지고 gate가 통과해야 합니다.',
             samples=[s['id'] for s in value.get('samples', []) if s['missing'] or s['grading_error']
                      or s['status'] != 'completed' or not s['activation_valid'] or not s['usage']['calls_complete']])
     grouped = defaultdict(list)
@@ -97,7 +101,7 @@ def recommendations(spec, value, failure=None):
         add(priority, case + ' / ' + provider + ' / ' + criterion,
             '; '.join(sorted({f['reason'] for f in findings})) + '. ' + str(len({f['repeat'] for f in findings}))
             + '개 반복에서 관측. ' + '; '.join(str(x) for x in findings[0]['evidence'])[:350], hypothesis, action,
-            '같은 기준으로 해당 사례의 두 대조군 대비 퇴행이 사라지는지 확인하고, 전체 유형과 holdout도 재실행합니다.',
+            '같은 기준으로 해당 사례의 대조 조건 대비 퇴행이 사라지는지 확인하고, 전체 유형과 holdout도 재실행합니다.',
             samples=[f['sample'] for f in findings], rules=[p for f in findings for p in f['rule_paths']],
             cases=[case], kinds=[findings[0]['goal_type']], measurements=findings)
     disagreements = [s for s in value.get('samples', []) if any(c.get('disagreement') for c in s['criteria'].values())]
@@ -116,6 +120,8 @@ def recommendations(spec, value, failure=None):
 def write_report(root, spec, value=None, failure=None):
     root = Path(root)
     value = value or {}
+    arms = comparison_arms(spec)
+    controls = [arm for arm in arms if arm != 'candidate']
     verdict = 'inconclusive' if failure else value.get('verdict', 'inconclusive')
     groups, outcomes = comparisons(spec, value)
     if failure:
@@ -124,6 +130,7 @@ def write_report(root, spec, value=None, failure=None):
     items = recommendations(spec, value, failure)
     result = {'verdict': verdict, 'passed': not failure and value.get('passed', False),
         'manifest_hash': value.get('manifest_hash'), 'failure': failure,
+        'arms': list(arms),
         'profiles': {p: {'model': spec['models'][p], 'effort': spec.get('efforts', {}).get(p)} for p in ('claude', 'codex')},
         'evaluation': spec.get('evaluation') or value.get('reviewer'),
         'goal_types': sorted({goal_type(c) for c in spec['suite']['cases']}),
@@ -145,11 +152,14 @@ def write_report(root, spec, value=None, failure=None):
                   '| --- | --- | --- | --- | --- | --- |'])
     for row in groups:
         if row['goal_type'] == 'all':
-            lines.append(f"| {row['provider']} / {row['arm']} | {row['completed']} / {row['expected']} | {display(row['quality_mean'])} ({row['rated']}) | {display(row['seconds_mean'])} | {display(row['provider_calls_mean'])} | {display(row['extra_user_requests_mean'])} |")
+            lines.append(f"| {row['provider']} / {ARM_LABELS[row['arm']]} | {row['completed']} / {row['expected']} | {display(row['quality_mean'])} ({row['rated']}) | {display(row['seconds_mean'])} | {display(row['provider_calls_mean'])} | {display(row['extra_user_requests_mean'])} |")
     lines.extend(['', '품질은 평가 근거가 갖춰진 결과, 시간·호출 수는 관측된 시도 기준입니다. 누락된 값은 0으로 계산하지 않습니다.', '',
-                  '## 목표 유형별 결과', '', '| 유형 / 제공자 | 완료 / 예정 | 판정 | 품질 차이: plain 대비 | reference 대비 |', '| --- | --- | --- | --- | --- |'])
+                  '## 목표 유형별 결과', '',
+                  '| 유형 / 제공자 | 완료 / 예정 | 판정 | ' + ' | '.join('품질 차이: ' + ARM_LABELS[c] + ' 대비' for c in controls) + ' |',
+                  '| ' + ' | '.join(['---'] * (3 + len(controls))) + ' |'])
     for row in outcomes:
-        lines.append(f"| {row['goal_type']} / {row['provider']} | {row['completed']} / {row['expected']} | {row['status']} | {display(row['quality_delta']['plain'])} | {display(row['quality_delta']['reference'])} |")
+        deltas = ' | '.join(display(row['quality_delta'][control]) for control in controls)
+        lines.append(f"| {row['goal_type']} / {row['provider']} | {row['completed']} / {row['expected']} | {row['status']} | {deltas} |")
     lines.extend(['', '## 개선 우선순위', ''])
     if not items:
         lines.append('관측된 퇴행이 없어 규칙 변경을 제안하지 않습니다. 이 결과만으로 일반적인 품질 우위를 주장할 수 없습니다.')

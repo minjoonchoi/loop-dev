@@ -55,11 +55,11 @@ class ReportTests(unittest.TestCase):
         self.root.mkdir()
         source = bench.source_snapshot(SOURCE)
         bench.export_files(self.root / 'sources/candidate', source['files'])
-        self.spec = {'version': 1, 'suite': suite, 'suite_hash': seal, 'providers': ['codex'],
+        self.spec = {'version': 2, 'arms': ['plain', 'candidate'], 'suite': suite, 'suite_hash': seal, 'providers': ['codex'],
                      'models': {'claude': 'fixed-claude', 'codex': 'fixed-codex'}, 'repeats': 3, 'seed': 0,
                      'efforts': {'claude': 'high', 'codex': 'medium'},
-                     'source': {'candidate': {'hash': source['hash'], 'ref': None}, 'reference': {'hash': 'reference', 'ref': 'fixed'}},
-                     'mode': 'live', 'planned_trials': 18}
+                     'source': {'candidate': {'hash': source['hash']}},
+                     'mode': 'live', 'planned_trials': 12}
         self.index = {'manifest_hash': digest(self.spec), 'complete': True, 'trials': []}
         self.ratings = {'manifest_hash': digest(self.spec), 'repeats': 2, 'reviewer': {'provider': 'human', 'model': 'reviewer-a'}, 'samples': {}}
         self.rows = []
@@ -109,11 +109,12 @@ class ReportTests(unittest.TestCase):
         value = reports.report(self.root)
         self.assertEqual(value['verdict'], 'improved')
         self.assertEqual(value['effects']['plain']['low'], 25)
-        self.assertEqual(value['effects']['reference']['mean'], 0)
+        self.assertEqual(set(value['effects']), {'plain'})
+        self.assertEqual(value['scope']['arms'], ['plain', 'candidate'])
 
     def test_case_regression_is_not_hidden_by_an_average_gain(self):
         for row in self.rows:
-            if row['arm'] == 'plain':
+            if row['arm'] == 'plain' and row['case'] == 'tiny-a':
                 for review in self.ratings['samples'][row['id']]['reviews']:
                     review['ratings'][0]['score'] = 1
         for row in self.rows:
@@ -124,7 +125,7 @@ class ReportTests(unittest.TestCase):
         value = reports.report(self.root)
         self.assertGreater(value['effects']['plain']['mean'], 0)
         self.assertEqual(value['verdict'], 'regression')
-        self.assertTrue(any(f.get('control') == 'reference' and f['case'] == 'tiny-b' for f in value['regressions']))
+        self.assertTrue(any(f.get('control') == 'plain' and f['case'] == 'tiny-b' for f in value['regressions']))
         improvement = read_json(self.root / 'improvements.json')
         self.assertEqual(improvement['goal_types'], ['development', 'explanation'])
         types = {r['goal_type']: r for r in improvement['type_outcomes']}
@@ -211,7 +212,7 @@ class ReportTests(unittest.TestCase):
             return copy.deepcopy(self.ratings['samples'][packet['sample']]['reviews'][0])
         with patch('loop_dev.bench_report.providers.structured_call', side_effect=call):
             value = reports.judge(self.root, 'claude', 'fixed-judge', 2, effort='high')
-        self.assertEqual(len(seen), 36)
+        self.assertEqual(len(seen), 24)
         self.assertEqual(set(seen), {('claude', 'fixed-judge', True, 'high')})
         self.assertTrue(value['passed'])
         self.assertEqual(value['reviewer'], {'provider': 'claude', 'model': 'fixed-judge', 'effort': 'high'})
@@ -230,7 +231,10 @@ class ReportTests(unittest.TestCase):
         reports.report(self.root)
         value = read_json(self.root / 'improvements.json')
         self.assertEqual(value['improvements'], [])
-        self.assertEqual(len(value['comparisons']), 9)
+        self.assertEqual(len(value['comparisons']), 6)
+        self.assertEqual(value['arms'], ['plain', 'candidate'])
+        self.assertTrue(all(set(t['quality_delta']) == {'plain'} for t in value['type_outcomes']))
+        self.assertNotIn('이전 버전', (self.root / 'improvements.md').read_text())
         (self.root / 'judgments.json').unlink()
         reports.report(self.root)
         value = read_json(self.root / 'improvements.json')
@@ -255,6 +259,60 @@ class ReportTests(unittest.TestCase):
             self.assertFalse(improvement['passed'])
             self.assertTrue(all(t['status'] == 'inconclusive' for t in improvement['type_outcomes']))
             self.assertEqual(read_json(output / 'check.json')['phase'], phase)
+
+    def test_missing_either_condition_never_passes(self):
+        rows, entries, ratings = self.rows[:], self.index['trials'][:], copy.deepcopy(self.ratings['samples'])
+        for arm in bench.ARMS:
+            missing = next(r['id'] for r in rows if r['arm'] == arm)
+            self.rows = [r for r in rows if r['id'] != missing]
+            self.index['trials'] = [e for e in entries if e['id'] != missing]
+            self.ratings['samples'] = {k: v for k, v in ratings.items() if k != missing}
+            self.save()
+            value = reports.report(self.root)
+            self.assertEqual(value['verdict'], 'inconclusive')
+            self.assertFalse(value['passed'])
+
+    def test_manifest_cannot_drop_the_plain_condition(self):
+        self.spec['arms'] = ['candidate']
+        self.index['manifest_hash'] = self.ratings['manifest_hash'] = digest(self.spec)
+        self.save()
+        with self.assertRaisesRegex(LoopError, 'both plain and candidate'):
+            reports.report(self.root)
+
+    def test_historical_reports_keep_their_original_reference_comparison(self):
+        self.spec['version'] = 1
+        del self.spec['arms']
+        self.spec['source']['reference'] = {'hash': 'old-reference', 'ref': 'old-commit'}
+        self.spec['planned_trials'] = 18
+        for row in list(self.rows):
+            if row['arm'] != 'plain':
+                continue
+            old = copy.deepcopy(row)
+            old.update(id=row['id'].replace('plain', 'reference'), arm='reference')
+            trial = self.root / 'trials' / old['id']
+            shutil.copytree(self.root / 'trials' / row['id'], trial)
+            packet = read_json(trial / 'packet.json')
+            packet['sample'] = old['id']
+            write_json(trial / 'packet.json', packet)
+            old['packet_hash'] = digest(packet)
+            old['evidence']['packet.json'] = file_hash(trial / 'packet.json')
+            self.rows.append(old)
+            self.index['trials'].append({'id': old['id'], 'hash': digest(old)})
+            rating = copy.deepcopy(self.ratings['samples'][row['id']])
+            rating['packet_hash'] = old['packet_hash']
+            self.ratings['samples'][old['id']] = rating
+        for row in self.rows:
+            if row['arm'] != 'reference':
+                for rating in self.ratings['samples'][row['id']]['reviews']:
+                    rating['ratings'][0]['score'] = 3
+        self.index['manifest_hash'] = self.ratings['manifest_hash'] = digest(self.spec)
+        self.save()
+        value = reports.report(self.root)
+        self.assertEqual(value['effects']['plain']['mean'], 0)
+        self.assertEqual(value['effects']['reference']['mean'], -12.5)
+        self.assertEqual(value['verdict'], 'regression')
+        self.assertIn('reference', value['scope']['arms'])
+        self.assertIn('이전 버전 대비', (self.root / 'improvements.md').read_text())
 
     def test_judge_disagreement_is_conservative_and_malformed_ratings_rejected(self):
         sample = next(r['id'] for r in self.rows if r['arm'] == 'candidate')
@@ -392,16 +450,17 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(spec['providers'], ['claude', 'codex'])
         self.assertEqual(spec['evaluation']['model'], 'independent-judge')
         self.assertEqual(spec['evaluation']['effort'], 'xhigh')
-        self.assertEqual(spec['limits']['default_judge_calls'], 24)
+        self.assertEqual(spec['arms'], ['plain', 'candidate'])
+        self.assertEqual(spec['limits']['default_judge_calls'], 16)
         judgments = read_json(output / 'judgments.json')
-        self.assertEqual(len(judgments['samples']), 12)
+        self.assertEqual(len(judgments['samples']), 8)
         processes = list(output.glob('judges/*/*/process.json'))
-        self.assertEqual(len(processes), 24)
+        self.assertEqual(len(processes), 16)
         self.assertTrue(all(read_json(p)['exit_code'] == 0 for p in processes))
         self.assertTrue(all('xhigh' in read_json(p)['argv'] and 'independent-judge' in read_json(p)['argv'] for p in processes))
         improvement = read_json(output / 'improvements.json')
         self.assertEqual(len(improvement['type_outcomes']), 4)
-        self.assertTrue(all(t['completed'] == t['expected'] == 3 for t in improvement['type_outcomes']))
+        self.assertTrue(all(t['completed'] == t['expected'] == 2 for t in improvement['type_outcomes']))
         self.assertTrue(all(r['rated'] == r['expected'] for r in improvement['comparisons']))
         self.assertTrue((output / 'improvements.md').is_file())
 
@@ -440,6 +499,10 @@ class RunnerTests(unittest.TestCase):
         self.assertTrue(value['dry_run'])
         self.assertEqual(value['providers'], ['claude', 'codex'])
         self.assertEqual(value['goal_types'], ['development', 'document', 'explanation'])
+        self.assertEqual(value['arms'], ['plain', 'candidate'])
+        self.assertEqual(value['planned_trials'], 72)
+        self.assertEqual(value['limits']['default_judge_calls'], 144)
+        self.assertEqual(set(value['source']), {'candidate'})
         self.assertEqual(value['efforts'], self.efforts)
         self.assertEqual(value['evaluation'], {'provider': 'codex', 'model': 'fixed-codex', 'effort': 'medium', 'repeats': 2})
         self.assertFalse(output.exists())
@@ -471,12 +534,17 @@ class RunnerTests(unittest.TestCase):
 
     def test_full_paired_runner_both_providers_resumes_and_separates_state(self):
         output = self.base / 'experiment'
-        value = bench.run(self.suite, SOURCE, 'HEAD', self.models, ['claude','codex'], 1, 7, 'isolated fake CLI test', output, self.actual, efforts=self.efforts)
+        candidate = self.base / 'source-without-git'
+        bench.export_files(candidate, bench.source_snapshot(SOURCE)['files'])
+        self.assertFalse((candidate / '.git').exists())
+        value = bench.run(self.suite, candidate, self.models, ['claude','codex'], 1, 7, 'isolated fake CLI test', output, self.actual, efforts=self.efforts)
         self.assertEqual(value['verdict'], 'inconclusive')
         self.assertFalse(value['passed'])
         root, spec, index, rows = bench.read_run(output)
         self.assertTrue(index['complete'])
-        self.assertEqual(len(rows), 12)
+        self.assertEqual(len(rows), 8)
+        self.assertEqual({r['arm'] for r in rows}, {'plain', 'candidate'})
+        self.assertEqual({p.name for p in (output / 'sources').iterdir()}, {'candidate'})
         self.assertEqual(spec['mode'], 'simulation')
         self.assertTrue(all(r['status'] == 'completed' for r in rows))
         self.assertTrue(all(r['activation_valid'] for r in rows))
@@ -539,7 +607,7 @@ class RunnerTests(unittest.TestCase):
         self.suite = make_suite(self.base / 'other-suite')
         output = self.base / 'no-run'
         with patch('loop_dev.benchmark.shutil.which', return_value=None), self.assertRaisesRegex(LoopError, 'Both CLI'):
-            bench.run(self.suite, SOURCE, 'HEAD', self.models, ['codex'], 3, 1, 'test', output, efforts=self.efforts)
+            bench.run(self.suite, SOURCE, self.models, ['codex'], 3, 1, 'test', output, efforts=self.efforts)
         self.assertFalse(output.exists())
 
     def test_checked_in_suite_graders_detect_real_initial_defects(self):
@@ -618,10 +686,10 @@ def add(path, text):
     def test_plan_cli_does_not_create_a_session_or_require_installed_models(self):
         home = self.base / 'untouched-knowledge'
         result = subprocess.run([sys.executable, str(SOURCE / 'scripts/loop.py'), '--knowledge-home', str(home),
-            'bench','plan','--suite',str(self.suite),'--candidate',str(SOURCE),'--reference-ref','HEAD',
+            'bench','plan','--suite',str(self.suite),'--candidate',str(SOURCE),
             '--codex-model','fixed-codex','--claude-model','fixed-claude','--codex-effort','medium','--claude-effort','high',
             '--provider','codex','--environment','isolated test'],
             capture_output=True,text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout)['planned_trials'], 18)
+        self.assertEqual(json.loads(result.stdout)['planned_trials'], 12)
         self.assertFalse(home.exists())

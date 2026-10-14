@@ -131,7 +131,7 @@ flowchart TD
 
 ## 내부 명령과 저장 위치
 
-명령은 에이전트가 실행합니다. 설치된 프로젝트는 `python3 .loop/loop.py`, 이 저장소는
+하네스 운영 명령은 에이전트가 실행합니다. 설치된 프로젝트는 `python3 .loop/loop.py`, 이 저장소는
 `python3 scripts/loop.py`를 사용합니다. 사용자가 JSON이나 ID를 직접 관리할 필요는 없습니다.
 
 | 용도 | 명령 |
@@ -163,7 +163,7 @@ flowchart TD
 
 ## 하네스가 실제로 더 나은지 평가
 
-벤치는 같은 요청을 **하네스 없음 / 기존 커밋 / 현재 변경**으로 반복 실행합니다.
+벤치는 같은 요청을 **하네스 미사용 / 현재 하네스 사용** 두 조건으로 반복 실행합니다.
 같은 모델·effort·초기 파일·예산을 사용하고, 대화·지식베이스·작업 공간을 각각 분리합니다.
 기능은 외부 검사로, 문서·설명은 익명 결과물의 기준별 평가로 확인합니다.
 완료 선언이나 작업량 자체에는 점수를 주지 않습니다.
@@ -173,17 +173,18 @@ flowchart TD
 변경 가설을 저장합니다. 규칙 변경 후 같은 기준으로 재측정하며, 코드나 평가 기준이
 바뀌면 이전 통과 결과가 만료됩니다.
 
-Claude와 Codex의 모델·effort를 각각 지정하면 한 명령으로 비교 실행·결과물 채점·게이트·
+터미널에서 Claude와 Codex의 모델·effort를 각각 지정하면 한 명령으로 비교 실행·결과물 채점·게이트·
 개선 리포트까지 생성합니다. **서로 다른 목표 유형을 2개 이상** 평가해야 하며, 기본은
 개발·문서·설명입니다. 같은 유형의 사례만 여러 개 넣으면 실행 전에 거절합니다.
 
 ```sh
 python3 scripts/benchmark.py \
   --claude-model "$BENCH_CLAUDE_MODEL" --claude-effort "$BENCH_CLAUDE_EFFORT" \
-  --codex-model "$BENCH_CODEX_MODEL" --codex-effort "$BENCH_CODEX_EFFORT" \
-  --reference-ref "$BENCH_REFERENCE_SHA"
+  --codex-model "$BENCH_CODEX_MODEL" --codex-effort "$BENCH_CODEX_EFFORT"
 ```
 
+대화 세션을 열거나 스킬을 미리 켤 필요가 없으며, 커밋 SHA도 입력하지 않습니다.
+현재 파일을 복사해 실행하고 변경 여부 확인용 해시는 자동 저장합니다.
 `--dry-run`은 실행 조건과 예산만 확인합니다. `improvements.md`에는 유형별 판정과
 우선 개선할 항목을, `improvements.json`에는 측정 근거·원인 가설·변경 범위·재검증 조건을
 저장합니다. 모델 비교는 같은 공통 평가자로 채점합니다.

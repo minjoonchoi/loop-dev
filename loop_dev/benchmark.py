@@ -18,7 +18,7 @@ from .contract import identifier
 from .process import execute
 from .storage import LoopError, digest, file_hash, inside, now, read_json, write_json, write_text
 
-ARMS = ('plain', 'reference', 'candidate')
+ARMS = ('plain', 'candidate')
 KINDS = ('development', 'document', 'explanation', 'research', 'review', 'planning', 'session')
 SOURCE_PATHS = ('scripts/loop.py', 'scripts/install.py', 'scripts/benchmark.py', 'loop_dev/', 'rules/', 'templates/', 'skills/loop-dev/')
 
@@ -157,35 +157,31 @@ def validate_evaluation(value):
     integer(value['repeats'], 2, 5, 'judge repetitions')
 
 
-def source_snapshot(root, ref=None):
+def comparison_arms(spec):
+    """New runs compare off/on; historical runs retain their original coverage."""
+    if spec.get('version') == 1 and 'arms' not in spec and set(spec.get('source', {})) == {'candidate', 'reference'}:
+        return ('plain', 'reference', 'candidate')
+    if spec.get('version') != 2 or spec.get('arms') != list(ARMS) or set(spec.get('source', {})) != {'candidate'}:
+        raise LoopError('Benchmark manifest must declare both plain and candidate conditions')
+    return ARMS
+
+
+def source_snapshot(root):
     root = Path(root).resolve()
     contents = {}
-    if ref:
-        resolved = subprocess.run(['git', '-C', str(root), 'rev-parse', '--verify', ref + '^{commit}'], capture_output=True, text=True)
-        if resolved.returncode:
-            raise LoopError('Reference must resolve to a local Git commit')
-        ref = resolved.stdout.strip()
-        listing = subprocess.check_output(['git', '-C', str(root), 'ls-tree', '-r', ref], text=True)
-        for line in listing.splitlines():
-            meta, name = line.split('\t', 1)
-            if any(name == p or p.endswith('/') and name.startswith(p) for p in SOURCE_PATHS):
-                if not meta.startswith('100'):
-                    raise LoopError('Harness source must contain regular files')
-                contents[name] = subprocess.check_output(['git', '-C', str(root), 'show', ref + ':' + name]).decode('utf-8')
-    else:
-        for selector in SOURCE_PATHS:
-            path = root / selector
-            candidates = path.rglob('*') if selector.endswith('/') else [path]
-            for p in candidates:
-                if '__pycache__' in p.parts or p.suffix not in ('.py', '.md', '.json', '.yaml'):
-                    continue
-                if p.is_symlink():
-                    raise LoopError('Harness source must not use symlinks')
-                if p.is_file():
-                    contents[p.relative_to(root).as_posix()] = p.read_text()
+    for selector in SOURCE_PATHS:
+        path = root / selector
+        candidates = path.rglob('*') if selector.endswith('/') else [path]
+        for p in candidates:
+            if '__pycache__' in p.parts or p.suffix not in ('.py', '.md', '.json', '.yaml'):
+                continue
+            if p.is_symlink():
+                raise LoopError('Harness source must not use symlinks')
+            if p.is_file():
+                contents[p.relative_to(root).as_posix()] = p.read_text()
     if not {'scripts/install.py', 'scripts/loop.py', 'rules/work.md', 'loop_dev/engine.py'}.issubset(contents):
         raise LoopError('Harness snapshot lacks required install/runtime files')
-    return {'ref': ref, 'hash': digest(contents), 'files': contents}
+    return {'hash': digest(contents), 'files': contents}
 
 
 def profile_fingerprint():
@@ -195,7 +191,7 @@ def profile_fingerprint():
     return {str(p): file_hash(p) for p in paths}
 
 
-def prepare(suite_path, candidate, reference_ref, models, providers, repeats, seed, environment, efforts=None, evaluation=None):
+def prepare(suite_path, candidate, models, providers, repeats, seed, environment, efforts=None, evaluation=None):
     suite, seal, assets = load_suite(suite_path)
     integer(repeats, 1, 100, 'repeats')
     integer(seed, 0, 2**31 - 1, 'seed')
@@ -209,10 +205,9 @@ def prepare(suite_path, candidate, reference_ref, models, providers, repeats, se
     if not isinstance(environment, str) or not environment.strip():
         raise LoopError('Describe the fixed host/configuration profile')
     current = source_snapshot(candidate)
-    reference = source_snapshot(candidate, reference_ref)
     planned_trials = len(suite['cases']) * len(providers) * repeats * len(ARMS)
-    return {'version': 1, 'suite': suite, 'suite_hash': seal, 'assets': assets,
-            'source': {'candidate': current, 'reference': reference},
+    return {'version': 2, 'arms': list(ARMS), 'suite': suite, 'suite_hash': seal, 'assets': assets,
+            'source': {'candidate': current},
             'models': models, 'efforts': efforts, 'evaluation': evaluation, 'goal_types': goal_types(suite),
             'providers': providers, 'repeats': repeats, 'seed': seed,
             'environment': environment, 'profile': profile_fingerprint(),
@@ -359,9 +354,9 @@ def run_trial(root, spec, case, provider, repeat, arm, sources, suite_home, exec
     return record
 
 
-def run(suite_path, candidate, reference_ref, models, providers, repeats, seed, environment, output, executables=None,
+def run(suite_path, candidate, models, providers, repeats, seed, environment, output, executables=None,
         efforts=None, evaluation=None):
-    spec = prepare(suite_path, candidate, reference_ref, models, providers, repeats, seed, environment, efforts, evaluation)
+    spec = prepare(suite_path, candidate, models, providers, repeats, seed, environment, efforts, evaluation)
     output = Path(output).resolve()
     if output.exists() or output.is_relative_to(Path(candidate).resolve()) or output.is_relative_to(Path(suite_path).resolve().parent):
         raise LoopError('Use a new benchmark output directory outside source/suite trees')
@@ -370,7 +365,7 @@ def run(suite_path, candidate, reference_ref, models, providers, repeats, seed, 
         raise LoopError('Both CLI executables are required; no benchmark result was produced')
     output.mkdir(parents=True)
     sources = {}
-    for arm in ('reference', 'candidate'):
+    for arm in spec['source']:
         sources[arm] = output / 'sources' / arm
         export_files(sources[arm], spec['source'][arm]['files'])
     spec['created_at'] = now()
@@ -381,7 +376,7 @@ def run(suite_path, candidate, reference_ref, models, providers, repeats, seed, 
         if result['exit_code'] != 0:
             raise LoopError('CLI version preflight failed')
         spec['versions'][provider] = Path(result['stdout']).read_text().strip()[:300]
-    spec['source'] = {k: {p: v[p] for p in ('hash', 'ref')} for k, v in spec['source'].items()}
+    spec['source'] = {k: {'hash': v['hash']} for k, v in spec['source'].items()}
     write_json(output / 'manifest.json', spec)
     trials = []
     write_json(output / 'index.json', {'manifest_hash': digest(spec), 'trials': [], 'complete': False})
@@ -390,7 +385,7 @@ def run(suite_path, candidate, reference_ref, models, providers, repeats, seed, 
     rng.shuffle(schedule)
     try:
         for case, provider, repeat in schedule:
-            arms = list(ARMS)
+            arms = list(spec['arms'])
             rng.shuffle(arms)
             for arm in arms:
                 record = run_trial(output, spec, case, provider, repeat, arm, sources, Path(suite_path).resolve().parent, actual)
@@ -411,6 +406,7 @@ def read_run(root):
     spec, index = read_json(root / 'manifest.json'), read_json(root / 'index.json')
     if index['manifest_hash'] != digest(spec):
         raise LoopError('Benchmark manifest changed; rerun with the intended criteria and inputs')
+    comparison_arms(spec)
     rows = []
     seen = set()
     for entry in index['trials']:

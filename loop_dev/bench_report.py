@@ -8,7 +8,7 @@ import statistics
 import uuid
 
 from . import providers
-from .benchmark import ARMS, goal_type, integer, number, read_run, source_snapshot, validate_evaluation
+from .benchmark import comparison_arms, goal_type, integer, read_run, source_snapshot, validate_evaluation
 from .storage import LoopError, digest, read_json, write_json, write_text
 from .writing import plain
 
@@ -140,8 +140,10 @@ def interval(values):
 def report(root, judgment_path=None):
     root, spec, index, rows = read_run(root)
     cases = {c['id']: c for c in spec['suite']['cases']}
+    arms = comparison_arms(spec)
+    controls = [arm for arm in arms if arm != 'candidate']
     ratings, reviewer = assessments(root, index, rows, judgment_path, spec.get('evaluation'))
-    expected = {(c, p, r, arm) for c in cases for p in spec['providers'] for r in range(spec['repeats']) for arm in ARMS}
+    expected = {(c, p, r, arm) for c in cases for p in spec['providers'] for r in range(spec['repeats']) for arm in arms}
     keyed, scored = {}, {}
     for row in rows:
         key = (row['case'], row['provider'], row['repeat'], row['arm'])
@@ -188,7 +190,7 @@ def report(root, judgment_path=None):
                     if c['critical'] and value and value['score'] < 4:
                         regressions.append({**base, 'criterion': c['id'], 'reason': 'Candidate failed a mandatory outcome',
                                             'evidence': value['evidence'], 'rule_paths': c.get('rule_paths', ['rules/quality.md'])})
-                for control in ('plain', 'reference'):
+                for control in controls:
                     previous = keyed.get((case_id, provider, repeat, control))
                     if not previous:
                         continue
@@ -216,7 +218,7 @@ def report(root, judgment_path=None):
                                             'evidence': [f"{result['extra_user_requests']} versus {old['extra_user_requests']}"],
                                             'rule_paths': ['rules/context.md', 'rules/work.md']})
     effects = {control: interval([c['quality_delta'] for c in comparisons if c['control'] == control and c['quality_delta'] is not None])
-               for control in ('plain', 'reference')}
+               for control in controls}
     if spec['mode'] != 'live':
         missing.append('Simulation verifies benchmark plumbing, not actual model quality')
     verdict = ('regression' if regressions else 'inconclusive' if missing else
@@ -224,6 +226,7 @@ def report(root, judgment_path=None):
     value = {'verdict': verdict, 'passed': verdict in ('improved', 'non_regressing'), 'manifest_hash': index['manifest_hash'],
              'run_complete': index['complete'],
              'scope': {'suite': spec['suite']['id'], 'suite_hash': spec['suite_hash'], 'providers': spec['providers'],
+                       'arms': list(arms),
                        'models': spec['models'], 'efforts': spec.get('efforts', {}), 'evaluation': spec.get('evaluation'),
                        'goal_types': types, 'repeats': spec['repeats'], 'source': spec['source'], 'mode': spec['mode']},
              'effects': effects, 'missing': missing, 'regressions': regressions, 'comparisons': comparisons,
