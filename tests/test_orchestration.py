@@ -17,7 +17,7 @@ class OrchestrationTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.base = Path(self.temp.name)
+        self.base = Path(self.temp.name).resolve()
         self.root = self.base / "project"
         self.root.mkdir()
         self.kb = KnowledgeBase(self.base / "knowledge")
@@ -66,6 +66,25 @@ class OrchestrationTests(unittest.TestCase):
         self.assertEqual(first["feedback"][0]["evidence"]["status"], "reference_only")
         self.assertEqual(read_json(Path(first["current"]["record_ref"]))["goal"], self.task["goal"])
         self.assertEqual(self.kb.get("task", self.task["id"]), self.task)
+
+    def test_symlink_checkout_uses_canonical_path_without_changing_task_identity(self):
+        alias = self.base / "project-alias"
+        alias.symlink_to(self.root, target_is_directory=True)
+        attached = self.kb.attach(alias)
+        self.assertEqual(attached["id"], self.location["id"])
+        self.assertEqual(attached["root"], str(self.root.resolve()))
+        capsule = self.orchestration.context(self.session, self.task["id"])
+        self.assertEqual(capsule["directories"][0]["root"], str(self.root.resolve()))
+        self.assertNotEqual(capsule["directories"][0]["root"], str(alias))
+
+        other = self.base / "different-project"
+        other.mkdir()
+        alias.unlink()
+        alias.symlink_to(other, target_is_directory=True)
+        replacement = self.kb.attach(alias)
+        self.assertNotEqual(replacement["id"], self.location["id"])
+        self.assertEqual(replacement["root"], str(other.resolve()))
+        self.assertEqual(self.orchestration.context(self.session, self.task["id"]), capsule)
 
     def test_feedback_cas_idempotence_immutable_ids_and_user_basis(self):
         receipt = self.save(expected=0)
