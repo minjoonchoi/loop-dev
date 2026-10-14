@@ -8,7 +8,7 @@ import uuid
 from .context import inventory
 from .contract import AREAS, identifier
 from .knowledge import KnowledgeBase
-from .storage import (LoopError, digest, file_hash, git, inside, now, read_json,
+from .storage import (LoopError, digest, file_hash, git, harness_digest, inside, now, read_json,
                       rule_manifest, snapshot, write_json)
 
 
@@ -83,7 +83,8 @@ class Session:
         declared = sorted({name for goal in data["goals"].values() for name in goal["rules"]})
         value = {"snapshot": snapshot(self.root),
                  "branch": git(self.root, "symbolic-ref", "--short", "HEAD", required=False).decode().strip() or "DETACHED",
-                 "rules": rule_manifest(self.root, declared, missing_ok=True)}
+                 "rules": rule_manifest(self.root, declared, missing_ok=True),
+                 "harness": harness_digest()}
         value["revision"] = digest(value)
         return value
 
@@ -153,6 +154,7 @@ class Session:
                                           "area", "basis", "applies_to") if key in entry}
         item.update(recorded_at=now(), generation=previous["generation"] + 1 if previous else 1,
                     observed_revision=observed_revision, branch=current["branch"], rules=current["rules"],
+                    harness=current["harness"] if entry["paths"] else None,
                     fingerprints=self.fingerprints(entry["paths"], current))
         # A concurrent edit must not stamp an analysis with mixed input versions.
         if self.observe(data)["revision"] != observed_revision:
@@ -178,6 +180,9 @@ class Session:
         for item in data["entries"].values():
             view = {key: value for key, value in item.items() if key not in ("fingerprints", "rules", "branch")}
             reasons = []
+            # Missing legacy stamps are stale until the analysis is inspected again.
+            if item["paths"] and item.get("harness") != current["harness"]:
+                reasons.append({"kind": "harness_changed"})
             if item["branch"] != current["branch"]:
                 reasons.append({"kind": "branch_changed", "before": item["branch"], "after": current["branch"]})
             if item["rules"] != current["rules"]:

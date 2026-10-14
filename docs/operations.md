@@ -14,8 +14,17 @@
 [Claude Code 공식 문서](https://code.claude.com/docs/en/skills)를 따릅니다.
 Codex는 `.agents/skills/loop-dev/agents/openai.yaml`의 `allow_implicit_invocation: false`,
 Claude는 `.claude/skills/loop-dev/SKILL.md`의 `disable-model-invocation: true`를 사용합니다.
-공통 본문은 `skills/loop-dev/SKILL.md` 한 곳에서 관리하고 설치 때 복사합니다.
-기존 호스트가 새 스킬을 아직 표시하지 않으면 해당 호스트의 스킬 새로고침/재시작 절차를 따릅니다.
+공통 본문은 `skills/loop-dev/SKILL.md` 한 곳에서 관리하고 설치 때 환경별 어댑터를 생성합니다.
+`make install`은 사용자 스킬 경로를 `~/.local/share/loop-dev/install`에 연결합니다.
+프로젝트 범위는 `make TARGET=/absolute/project install`이며 `.loop/install`을 사용합니다.
+런타임/규칙은 원본 저장소를 참조합니다. 원본 이동 뒤에는 새 위치에서 재설치해 연결합니다.
+재설치 전에는 기존 경로를 사용할 수 없습니다. 본문/메타데이터 변경 뒤에도 재설치합니다. 해제는 같은 범위에서 `make uninstall`입니다.
+기존 `python3 scripts/install.py --target PATH` 복사 설치는 독립/봉인 환경에 남겨 둡니다.
+`make uninstall`과 연결 설치 전환은 기존 복사 설치를 제거하지 않습니다. 설치/해제는 반복
+실행 가능하며 충돌은 변경 전에 거절합니다. 해제 뒤에도 목표·상태·지식 기록은 보존됩니다.
+설치/갱신/해제 뒤에는 새 대화 또는 호스트의 스킬 새로고침/재시작 절차를 사용합니다.
+해제는 현재 대화에 로드된 지침을 지우지 않습니다. 진입 파일이 없으면 자동 처리를 중단하고
+알리며, 다른 경로로 우회하거나 새 세션을 만들지 않습니다.
 
 ## 첫 실행
 
@@ -93,7 +102,7 @@ Claude는 print 모드와 `--output-format json`, `--json-schema`를 사용하�
 ## 중단 후 재개
 
 같은 대화의 새 요청은 `harness status`와 기존 세션 기록을 먼저 읽습니다. 스킬 활성화 결과의
-`session_id`·`knowledge_home`·`entrypoint`를 맥락 압축 때도 유지하고, 첫 목표부터 `--session`으로 연결합니다.
+`session_id`·`knowledge_home`·`rules_home`·`entrypoint`를 맥락 압축 때도 유지하고, 첫 목표부터 `--session`으로 연결합니다.
 폴더를 옮겨도 원래 실행 파일의 절대 경로를 사용합니다. 목표 완료는 활성화를 해제하지 않습니다. 사용자가 ID를
 입력하거나 “이전 분석을 재사용해 줘”라고 요청할 필요가 없습니다. `session context`에서
 `reusable`은 유효한 주제 요약, `stale`은 변경된 근거와 재확인할 주제,
@@ -118,7 +127,7 @@ Claude는 print 모드와 `--output-format json`, `--json-schema`를 사용하�
 기존 버전으로 마치거나 종료한 뒤 설치 스크립트로 업데이트합니다.
 
 ```sh
-python3 .loop/loop.py context my-goal
+python3 "ENTRYPOINT" --knowledge-home "KNOWLEDGE_HOME" context my-goal
 ```
 
 반환된 `context` 파일의 `state`, `next`, `latest_gate`, `notes`를 읽습니다. 구현 중 세션이

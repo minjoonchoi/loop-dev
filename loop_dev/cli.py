@@ -222,7 +222,7 @@ def common_command(args, knowledge):
     return getattr(work, cmd)(args.task)
 
 
-def main(argv=None):
+def main(argv=None, *, entrypoint=None):
     args = parser().parse_args(argv)
     try:
         if args.command == "bench":
@@ -260,7 +260,7 @@ def main(argv=None):
         if args.command == "orchestration":
             from .orchestration import Orchestration
             orchestration = Orchestration(knowledge)
-            output = (orchestration.context(args.session_id, args.task, args.limit)
+            output = (orchestration.context(args.session_id, args.task, args.limit, entrypoint=entrypoint)
                       if args.orchestration_command == "context" else
                       orchestration.feedback(args.session_id, read_json(args.input), args.expected_control_version))
             print(json.dumps(output, ensure_ascii=False, indent=2))
@@ -270,7 +270,9 @@ def main(argv=None):
             output = (harness.on(args.provider, args.session) if args.harness_command == "on"
                       else getattr(harness, args.harness_command)(args.session_id))
             base = Path(__file__).resolve().parent.parent
-            output["entrypoint"] = str(base / ("loop.py" if (base / "loop.py").is_file() else "scripts/loop.py"))
+            output["entrypoint"] = str(Path(entrypoint).absolute() if entrypoint else
+                                       base / ("loop.py" if (base / "loop.py").is_file() else "scripts/loop.py"))
+            output["rules_home"] = str(base / "rules")
             print(json.dumps(output, ensure_ascii=False, indent=2))
             return 0
         if args.command in ("work", "knowledge"):

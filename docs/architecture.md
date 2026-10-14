@@ -52,6 +52,33 @@ This is host-agent routing plus persisted state, not a keyword parser or message
 | Bounded subprocesses | `process.py`, argv arrays, stdin EOF, process-group timeout |
 | Freshness/concurrency | `storage.py`, hashes, atomic JSON, POSIX flock |
 
+## Installation adapters
+
+`make install` registers user discovery symlinks under `~/.agents/skills` and
+`~/.claude/skills`, backed by owned adapters in `~/.local/share/loop-dev/install`.
+`make TARGET=/absolute/project install` instead uses project discovery paths and
+`.loop/install`. Adapters share the canonical skill body; Claude-only metadata is
+added during generation. Their `loop.py` enters the owned wrapper and rules/runtime
+reference the source checkout. After moving the source, rerun install from its new
+location to relink; the former path is unavailable until then.
+Reinstall refreshes skill text/metadata; runtime/rule changes remain subject to existing
+freshness seals. `make uninstall` removes the same scope's owned installation while
+preserving unrelated instructions/settings/files. The legacy `--target` copy installer
+remains available for sealed benchmarks and independent copies; linked uninstall/
+migration intentionally does not remove legacy copied installations. Install/uninstall
+are idempotent and reject conflicts before mutation. Project installs manage a
+`.gitignore` block for host-specific links, runtime and state. Uninstall retains goals,
+state and knowledge; if state remains, it retains the `/.loop/state/` ignore.
+
+`harness_digest` fingerprints package code, built-in rules and canonical skill metadata
+independently of target paths. Source changes invalidate frozen development evidence
+and dependent caches, including legacy caches without a stamp. Pathless user decisions
+retain their scope and remain reusable.
+
+Hosts may retain already-loaded skill text after install changes: use a new conversation
+or host reload. An active conversation whose entrypoint disappears stops routing;
+it never selects another runtime or silently reactivates.
+
 ## Session activation
 
 `harness on --provider PROVIDER [--session ID]` explicitly enables the bound session.
@@ -65,7 +92,7 @@ repeated history. Changes serialize through a SQLite transaction.
 Every new goal/task receives that ID, even the first. `orchestration context SESSION`
 is the main session's default input after user inputs, worker results and compaction.
 Status and the underlying knowledge/development contexts also expose activation.
-Task completion never toggles it. The host preserves `{session_id, knowledge_home,
+Task completion never toggles it. The host preserves `{session_id, knowledge_home, rules_home,
 entrypoint}` in conversation/compaction handoffs. The absolute CLI path works after
 moving to an uninstalled directory, using `--root`/`--path` to select the target.
 No provider-wide "latest session" file is used. Knowledge may be shared across chats;
@@ -340,7 +367,7 @@ decision becomes a blocker and a separate preflight goal rather than a mid-run q
 A local session spans multiple goals in the same Claude Code or Codex conversation.
 Explicit skill activation creates or enables its session; every goal passes
 `--session`. Low-level `init` or `session open` without an ID creates an inactive
-session. The agent carries the ID, absolute entrypoint and knowledge home in handoffs.
+session. The agent carries the ID, absolute entrypoint, rules home and knowledge home in handoffs.
 New conversations use new IDs; the engine never selects the latest cache as a proxy
 for session ownership. Identified tasks recover bindings only for their own resumed
 conversation. Providers must match the binding.

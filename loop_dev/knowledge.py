@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 import uuid
 
 from .contract import identifier
-from .storage import HARNESS_SKILL_FILES, LoopError, digest, file_hash, files, git, inside, now
+from .storage import HARNESS_SKILL_FILES, LoopError, digest, file_hash, files, git, harness_digest, inside, now
 
 
 def project_root(path):
@@ -181,6 +181,7 @@ class KnowledgeBase:
 
     def observe(self, locations):
         result = {}
+        harness = harness_digest()
         for location in locations:
             root = Path(location["root"])
             if not root.is_dir() or "checkout-" + digest(disk_identity(root))[:24] != location["id"]:
@@ -203,7 +204,8 @@ class KnowledgeBase:
                 if (root / name).is_file():
                     rules[name] = file_hash(inside(root, name))
             result[location["id"]] = {"project_id": location["project_id"], "root": str(root), "files": hashes,
-                                      "rules": rules, "branch": git(root, "symbolic-ref", "--short", "HEAD", required=False).decode().strip()}
+                                      "rules": rules, "harness": harness,
+                                      "branch": git(root, "symbolic-ref", "--short", "HEAD", required=False).decode().strip()}
         return result
 
     def fingerprint(self, observation, path):
@@ -266,7 +268,7 @@ class KnowledgeBase:
                     source_session_id=session_id, source_task_id=task_id,
                     paths=dependencies, fingerprints={p: self.fingerprint(source, p) for p in dependencies},
                     rules=source["rules"] if dependencies else {}, branch=source["branch"] if dependencies else None,
-                    recorded_at=now())
+                    harness=source["harness"] if dependencies else None, recorded_at=now())
         return item
 
     def remember(self, entry, locations, observed_revision, session_id=None, task_id=None):
@@ -336,6 +338,10 @@ class KnowledgeBase:
                                 current_rules[name] = file_hash(inside(Path(source["root"]), name))
                             except LoopError:
                                 current_rules[name] = "unavailable"
+                    # Older records lack this stamp: require inspection, never silently
+                    # promote cached analysis after upgrading a linked runtime.
+                    if item.get("harness") != source["harness"]:
+                        reasons.append("harness_changed")
                     if current_rules != item["rules"] or source["branch"] != item["branch"]:
                         reasons.append("rules_or_branch_changed")
                     for path in item["paths"]:
@@ -380,7 +386,7 @@ class KnowledgeBase:
                 "status": "confirmed", "summary": entry["summary"], "evidence": entry["evidence"],
                 "project_id": location["project_id"], "checkout_id": location["id"], "session_id": session_id,
                 "task_id": None, "paths": list(entry["fingerprints"]), "fingerprints": {}, "rules": entry["rules"],
-                "branch": entry["branch"], "recorded_at": entry["recorded_at"], "source_revision": digest(entry)}
+                "branch": entry["branch"], "harness": entry.get("harness"), "recorded_at": entry["recorded_at"], "source_revision": digest(entry)}
         # Expand legacy directory dependencies to their observed files; add directory stamps
         # from the original entry so future additions also invalidate the imported topic.
         item["paths"] = entry["paths"]

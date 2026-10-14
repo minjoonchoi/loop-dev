@@ -104,7 +104,9 @@ class RoutingIntegrationTests(ProjectTest):
         accepted = self.cli("assess", "demo", "--input", payload, entry=entry)
         self.assertTrue(accepted["passed"], accepted)
         self.assertEqual(accepted["assignment"]["status"], "done")
-        self.assertIn("Never accept solely", (self.root / "AGENTS.md").read_text())
+        self.assertIn("SKILL.md", (self.root / "AGENTS.md").read_text())
+        self.assertIn("self-report alone is insufficient",
+                      (self.root / ".loop/rules/delegation.md").read_text())
 
     def test_installed_common_assess_and_capsule_work_without_git(self):
         install(self.root)

@@ -110,9 +110,9 @@ class TeamIntegrationTests(ProjectTest):
         self.assertEqual(self.state()["phase"], "draft")
         instructions = (self.root / "AGENTS.md").read_text()
         self.assertTrue(instructions.startswith(original))
-        self.assertIn("Before every input, worker return and compaction recovery", instructions)
-        self.assertIn("only orchestrates", instructions)
-        self.assertIn("no global hooks", instructions)
+        self.assertIn("orchestration context", instructions)
+        self.assertIn("SKILL.md", instructions)
+        self.assertTrue((self.root / ".agents/skills/loop-dev/loop.py").is_file())
         self.assertTrue((self.root / ".loop/loop_dev/team.py").is_file())
         self.assertTrue((self.root / ".loop/loop_dev/orchestration.py").is_file())
 

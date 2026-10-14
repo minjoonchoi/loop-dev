@@ -131,9 +131,24 @@ def rule_manifest(root, declared, missing_ok=False):
     return result
 
 
+def harness_digest():
+    """Seal the running source policy, independently of target repository paths.
+
+    Only package code, built-in Markdown rules and canonical skill metadata are
+    read. Installed wrappers may link this source outside the target; those
+    paths must never become target rule/read permissions.
+    """
+    package = Path(__file__).resolve().parent
+    source = package.parent
+    paths = list(package.glob("*.py")) + list((source / "rules").glob("*.md"))
+    paths += [source / "skills/loop-dev/SKILL.md",
+              source / "skills/loop-dev/agents/openai.yaml"]
+    return digest({"version": 1, "files": {
+        path.relative_to(source).as_posix(): file_hash(path) for path in sorted(paths)}})
+
+
 def engine_digest():
-    root = Path(__file__).parent
-    return digest({p.name: file_hash(p) for p in sorted(root.glob("*.py"))})
+    return harness_digest()
 
 
 @contextlib.contextmanager

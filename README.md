@@ -19,7 +19,11 @@
 
 ```sh
 git clone https://github.com/minjoonchoi/loop-dev.git
-python3 loop-dev/scripts/install.py --target /absolute/path/to/project
+cd loop-dev
+# 범위를 하나 선택: 모든 프로젝트
+make install
+# 또는 특정 프로젝트만
+# make TARGET=/absolute/path/to/project install
 ```
 
 대상 디렉터리에서 스킬을 **처음 한 번** 명시적으로 실행합니다. 목표를 같이 적어도 됩니다.
@@ -48,10 +52,30 @@ python3 loop-dev/scripts/install.py --target /absolute/path/to/project
 Claude는 `disable-model-invocation: true`, Codex는 `allow_implicit_invocation: false`로
 최초 자동 호출을 끕니다. 이 설정은 활성화 이후의 대화 규칙을 해제하지 않습니다.
 
-설치는 `.claude/skills/loop-dev/`·`.agents/skills/loop-dev/`에 같은 공통 스킬을 등록하고,
-기존 `AGENTS.md`·`CLAUDE.md`에 관리 블록만 추가합니다. 기존 지침·다른 스킬·설정은 보존합니다.
-로컬에서 수정한 관리 파일은 덮어쓰지 않습니다. 폴더 이동 시 에이전트가 원래 실행 파일의
-절대 경로와 세션 ID를 유지하므로 재호출할 필요가 없습니다.
+`make install`은 사용자 스킬 경로 `~/.agents/skills/loop-dev`와
+`~/.claude/skills/loop-dev`를 `~/.local/share/loop-dev/install`의 관리 어댑터에 연결합니다.
+`TARGET=/absolute/path/to/project`는 그 프로젝트의 `.agents/skills/`·`.claude/skills/`와
+`.loop/install`을 사용합니다. 기존 지침·다른 스킬·설정과 로컬 변경은 보존합니다.
+런타임과 규칙은 원본 저장소를 참조합니다. 원본을 옮겼다면 새 위치에서 같은 설치 명령을
+다시 실행해 연결합니다. 재설치 전에는 이전 경로를 사용할 수 없습니다.
+스킬 본문/메타데이터 변경도 같은 설치 명령으로 갱신합니다.
+
+```sh
+# 설치한 범위에 맞춰 선택
+make uninstall
+# make TARGET=/absolute/path/to/project uninstall
+```
+
+설치/갱신/해제 후 새 대화를 열거나 호스트의 스킬 새로고침 절차를 따릅니다.
+현재 대화에 이미 로드된 지침은 해제로 지워지지 않습니다. 활성 대화는 진입 파일이
+없어지면 자동 처리를 멈추고 이를 알리며 다른 경로로 우회하거나 재활성화하지 않습니다.
+폴더 이동 때도 반환된 절대 진입 경로·규칙 경로·지식 홈·세션 ID를 유지합니다.
+기존 복사 설치 `python3 scripts/install.py --target /absolute/path/to/project`는
+독립 복사본이 필요한 환경과 봉인된 벤치마크에 계속 사용할 수 있습니다.
+`make uninstall`과 연결 설치 전환은 새 연결 설치만 관리하며 기존 복사 설치를 제거하지 않습니다.
+설치/해제는 반복 실행해도 안전하며 충돌은 파일 변경 전에 거절합니다. 프로젝트 설치는
+호스트별 연결·런타임·상태의 관리 `.gitignore` 블록을 추가합니다. 해제는 목표·상태·지식 기록을
+보존하고, 상태 기록이 남으면 `/.loop/state/` 제외 규칙도 남깁니다.
 
 ## 두 단계의 역할
 
@@ -171,8 +195,8 @@ flowchart TD
 
 ## 내부 명령과 저장 위치
 
-하네스 운영 명령은 에이전트가 실행합니다. 설치된 프로젝트는 `python3 .loop/loop.py`, 이 저장소는
-`python3 scripts/loop.py`를 사용합니다. 사용자가 JSON이나 ID를 직접 관리할 필요는 없습니다.
+하네스 운영 명령은 에이전트가 실행합니다. 설치된 스킬은 `python3 SKILL_DIR/loop.py`로 시작한 뒤 반환된 절대 진입 경로를 사용합니다.
+이 저장소는 `python3 scripts/loop.py`, 기존 복사 설치는 `python3 .loop/loop.py`를 사용합니다. 사용자가 JSON이나 ID를 직접 관리할 필요는 없습니다.
 
 | 용도 | 명령 |
 | --- | --- |

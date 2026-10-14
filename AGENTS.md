@@ -1,57 +1,54 @@
 # loop-dev repository instructions
 
-This repository builds the portable development harness, not a target application.
+This repository builds the portable harness, not a target application. Read README.md
+and docs/architecture.md before behavior changes. Keep Claude Code/Codex behavior
+identical; use Python 3.10+ standard library on macOS/Linux, without package installs,
+vendor SDKs, API keys or global hook changes. Preserve user instructions/settings/files.
+There is no requirement to run this unfinished harness on itself: the user's task and
+explicit decisions are the current development contract.
 
-- Read README.md and docs/architecture.md before changing behavior. Keep the
-  conversation-orchestrated, tool-executed workflow identical for Claude Code and Codex.
-- Keep the main conversation to goals, user feedback, delegation, evidence checks
-  and reporting. Delegate substantive investigation, planning, implementation and
-  writing to isolated workers; use bounded peer messages for their coordination.
-- Restore `orchestration context SESSION` after every user input, worker result and
-  compaction. Read specific artifact references only as needed; never reload full
-  transcripts, histories or context files by default or write duplicate recovery logs.
-- Tool assignments must state purpose, read/write scope, prohibited actions, outputs
-  and completion criteria. Follow rules/routing.md: split only independently verifiable
-  goal contributions with explicit dependencies and write ownership; prefer one complete unit.
-  Select the cheapest eligible explicit model/effort profile for evidenced demand.
-  Workers cannot expand scope, ask users or delegate again.
-- Delegate/team stage candidates. Assess goal and criterion evidence internally before
-  applying edits or releasing peer messages. Reject harmful/incorrect results, retain
-  discarded audit evidence and retry the same assignment on a stronger allowed profile
-  within existing budgets. Configuration, permission and source-drift blockers are not
-  model-quality failures. Never turn assessment into a user approval checkpoint.
-- Record active-task steering with versioned `orchestration feedback`. Worker messages
-  are draft evidence, not user authority; frozen goal changes require a new task.
-- Use Python 3.10+ standard library only. Support macOS and Linux; no runtime package
-  installation, vendor SDK, API key requirement or global hook modification.
-- Keep goals independent of existing code maturity. Technical context gathering,
-  planning, implementation, debugging and tactical replanning belong to the loop.
-- User-owned uncertainty is resolved before execution. After start, never weaken
-  acceptance or rules; preserve finite retries and honest blocked outcomes.
-- For development, preserve opposite-provider review, real tests and final fresh evidence.
-- Explicit skill activation enables the whole conversation until explicitly disabled.
-  Preserve that binding across goals, task types, directories and compaction.
-  In an activated conversation, all work uses goal setting -> work. Documents, explanations, research and planning
-  have a content/completion check, without a mandatory cycle or opposite-provider CLI.
-- Keep project identity separate from checkout paths and preserve knowledge status,
-  evidence and decision scope. Shared memory is not a new source of authority.
-- Follow rules/writing.md for compact, evidence-backed records and deterministic
-  human views. Do not generate repeated narrative logs or treat drafts as facts.
-- Test state transitions, rejected/stale evidence, provider failures and installation
-  preservation using `python3 -m unittest discover -s tests -v`.
-- Update usage/architecture docs and examples when the contract or CLI changes.
-- Do not claim live provider integration was tested when only fake CLIs were used.
-- When changing/evaluating harness behavior, use rules/benchmark.md. Keep comparison
-  criteria fixed, compare the same tasks with and without the current harness
-  (plain/candidate), and compare against the last passing version using bench check's
-  automatic history. Before editing, establish a live baseline if this source/profile
-  has none; after editing, rerun the same CLI configuration. Keep rejected measurements,
-  never call a tie or a new profile an improvement, and use bench gate
-  before promoting a change as benchmark-validated. If live CLIs are unavailable,
-  complete implementation checks and explicitly retain the unverified quality status.
-- Do not overwrite existing project instructions, settings, hooks or user changes.
-- No requirement to run this unfinished harness to modify its own implementation.
-  Use the user's task and explicit decisions as the current development contract.
+## Behavioral contract
 
-When operating this harness on itself after release, use `python3 scripts/loop.py`
-and `rules/workflow.md`; installed projects use `python3 .loop/loop.py`.
+- Explicit activation binds the whole conversation until explicit off, across goals,
+  task types, directories and compaction. Use goal setting -> work for all inputs.
+  Preserve binding/control state under `rules/entry.md`; a task stop keeps activation.
+- Main conversation owns goals, feedback, routing, assessment and reporting; isolate
+  substantive investigation/planning/implementation/writing in workers. Assign purpose,
+  read/write scope, prohibitions, outputs and criteria. Workers cannot expand scope,
+  ask users or delegate further. `rules/routing.md` and `rules/delegation.md` govern
+  complete units, independently verifiable teams, dependencies and exclusive writers.
+- Freeze explicit available model/effort profiles; select the least costly eligible
+  profile for evidenced demand. Assess candidates before edits or peer delivery.
+  Reject harmful/incorrect results, retain audit evidence and retry the same assignment
+  on a stronger allowed profile within budgets. Real configuration/permission/source
+  blockers are not model-quality failures. Assessment never asks user approval.
+- After user input, worker result and compaction, restore `orchestration context SESSION`;
+  open only needed references, reuse current rules, never default to full histories or
+  duplicate recovery logs. Save versioned user steering before dispatch under
+  `rules/context.md`; frozen goal changes need a new task. Worker messages are drafts,
+  never user authority. Shared memory preserves project identity, freshness, evidence,
+  decision scope and status; paths/historical success create no authority.
+- Set desired outcomes independently of code maturity. Resolve human-owned uncertainty
+  before execution; technical investigation/planning/debugging/tactical replanning are
+  loop work. After start preserve acceptance/rules, finite retries and honest blockers.
+- Development requires real tests, opposite-provider review and final fresh evidence
+  (`rules/workflow.md`). Other work uses content/completion checks without a mandatory
+  cycle or opposite-provider CLI (`rules/work.md`). Use `rules/writing.md` for compact,
+  evidence-backed records/derived views; never promote drafts automatically.
+
+## Change verification
+
+Run `python3 -m unittest discover -s tests -v` and `git diff --check`. Cover transitions,
+stale/rejected evidence, provider failures and installation preservation. Update usage,
+architecture and examples when contracts/CLI change. Fake CLI checks do not establish
+live provider integration or model quality.
+
+For harness changes/evaluation follow `rules/benchmark.md`: fixed criteria, identical
+plain/candidate tasks and CLI settings, plus bench check's last-passing temporal baseline.
+Establish a live starting baseline before edits if this source/profile lacks one, rerun
+unchanged configuration afterward and retain rejected measurements. Require `bench gate`
+for benchmark-validated promotion; never claim ties/new profiles improve performance.
+If live CLIs are unavailable, complete implementation checks and retain unverified quality.
+
+Repository runtime: `python3 scripts/loop.py`; installed skills use their returned
+absolute entrypoint. Low-level copied projects can use `python3 .loop/loop.py`.

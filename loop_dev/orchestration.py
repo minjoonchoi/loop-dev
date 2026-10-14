@@ -352,7 +352,7 @@ class Orchestration:
             value["latest_gate"] = gate
         return value
 
-    def context(self, session_id, task_id=None, limit=5):
+    def context(self, session_id, task_id=None, limit=5, *, entrypoint=None):
         _valid_id(session_id, "session ID")
         if type(limit) is not int or not 1 <= limit <= MAX_VISIBLE:
             raise LoopError("Orchestration context limit must be 1..5")
@@ -394,9 +394,11 @@ class Orchestration:
                 _write_view(Path(refs[key]), values)
             self._export_feedback(session_id, records, control)
             source = Path(__file__).resolve().parents[1]
-            entrypoint = source / "loop.py" if (source / "loop.py").is_file() else source / "scripts/loop.py"
+            cli_entry = (Path(entrypoint).absolute() if entrypoint else
+                         source / ("loop.py" if (source / "loop.py").is_file() else "scripts/loop.py"))
             capsule = {"schema_version": 1, "session_id": session_id, "provider": session["provider"],
-                       "entrypoint": str(entrypoint), "knowledge_home": str(self.knowledge.home),
+                       "entrypoint": str(cli_entry), "rules_home": str(source / "rules"),
+                       "knowledge_home": str(self.knowledge.home),
                        "enabled": session.get("harness", {}).get("enabled", False),
                        "control_version": control["control_version"], "task_id": task_id,
                        "tasks": task_views[:limit], "workers": worker_views[:limit],
