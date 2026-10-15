@@ -12,28 +12,28 @@ import sys
 SOURCE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SOURCE))
 
-from loop_dev.storage import LoopError, file_hash, inside, locked, read_json, write_json, write_text
-from loop_dev.knowledge import project_root
+from loop_work.storage import LoopError, file_hash, inside, locked, read_json, write_json, write_text
+from loop_work.knowledge import project_root
 
 
-START = "<!-- loop-dev:start -->"
-END = "<!-- loop-dev:end -->"
-IGNORE_START = "# loop-dev:ignore:start"
-IGNORE_END = "# loop-dev:ignore:end"
+START = "<!-- loop-work:start -->"
+END = "<!-- loop-work:end -->"
+IGNORE_START = "# loop-work:ignore:start"
+IGNORE_END = "# loop-work:ignore:end"
 IGNORE_BLOCK = f"""{IGNORE_START}
 /.loop/install/
 /.loop/loop.py
-/.agents/skills/loop-dev
-/.claude/skills/loop-dev
+/.agents/skills/loop-work
+/.claude/skills/loop-work
 /.loop/state/
 {IGNORE_END}
 """
 BLOCK = f"""{START}
-## loop-dev conversation binding
+## loop-work conversation binding
 
-loop-dev activates only on explicit skill invocation. Once enabled,
+loop-work activates only on explicit skill invocation. Once enabled,
 route EVERY subsequent input through the bound session until explicit off, across goals, task types,
-directories and compaction. Follow the installed loop-dev SKILL.md; preserve its
+directories and compaction. Follow the installed loop-work SKILL.md; preserve its
 absolute entrypoint, knowledge home and session ID. After user input, worker result
 or compaction, read `orchestration context` for that binding, then only references
 needed for the next action. Explicitly assigned workers/reviewers execute only their supplied
@@ -45,21 +45,21 @@ routing and report it; never fall back or silently reactivate.
 
 def managed_files():
     result = {".loop/loop.py": (SOURCE / "scripts/loop.py").read_bytes()}
-    for folder in ("loop_dev", "rules", "templates"):
+    for folder in ("loop_work", "rules", "templates"):
         for source in sorted((SOURCE / folder).glob("*")):
             if source.is_file() and source.suffix in (".py", ".md", ".json"):
                 result[f".loop/{folder}/{source.name}"] = source.read_bytes()
-    skill = (SOURCE / "skills/loop-dev/SKILL.md").read_text(encoding="utf-8")
+    skill = (SOURCE / "skills/loop-work/SKILL.md").read_text(encoding="utf-8")
     if not skill.startswith("---\n"):
-        raise LoopError("The loop-dev skill needs YAML frontmatter")
-    result[".agents/skills/loop-dev/SKILL.md"] = skill.encode()
-    result[".agents/skills/loop-dev/agents/openai.yaml"] = (SOURCE / "skills/loop-dev/agents/openai.yaml").read_bytes()
-    helper = SOURCE / "skills/loop-dev/loop.py"
+        raise LoopError("The loop-work skill needs YAML frontmatter")
+    result[".agents/skills/loop-work/SKILL.md"] = skill.encode()
+    result[".agents/skills/loop-work/agents/openai.yaml"] = (SOURCE / "skills/loop-work/agents/openai.yaml").read_bytes()
+    helper = SOURCE / "skills/loop-work/loop.py"
     if helper.is_file():
         for provider in (".agents", ".claude"):
-            result[f"{provider}/skills/loop-dev/loop.py"] = helper.read_bytes()
+            result[f"{provider}/skills/loop-work/loop.py"] = helper.read_bytes()
     # Keep one shared body; only Claude's explicit-invocation metadata differs.
-    result[".claude/skills/loop-dev/SKILL.md"] = skill.replace(
+    result[".claude/skills/loop-work/SKILL.md"] = skill.replace(
         "---\n", "---\ndisable-model-invocation: true\n", 1).encode()
     return result
 
@@ -83,6 +83,7 @@ def install(target):
     if root == SOURCE:
         raise LoopError("Use scripts/loop.py in the source repository; install into a separate project")
     with locked(root):
+        _reject_legacy_install(root, "project")
         if (root / ".loop/state/active.json").exists():
             raise LoopError("Cannot replace the harness during an active goal")
         for state in (root / ".loop/state").glob("*/state.json"):
@@ -110,14 +111,14 @@ def install(target):
                 existing = content[start:end]
                 expected = old.get("entry_block", BLOCK).strip()
                 if existing.strip() != expected:
-                    raise LoopError(f"Local edits in {name}'s loop-dev block; reconcile before install")
+                    raise LoopError(f"Local edits in {name}'s loop-work block; reconcile before install")
                 content = content[:start] + BLOCK.rstrip() + content[end:]
             else:
                 content = content.rstrip() + ("\n\n" if content.strip() else "") + BLOCK
             writes[path] = content.encode()
         ignore = destination(root, ".gitignore")
         content = ignore.read_bytes().decode("utf-8") if ignore.exists() else ""
-        for line in ("/.loop/state/", "/.loop/loop_dev/__pycache__/"):
+        for line in ("/.loop/state/", "/.loop/loop_work/__pycache__/"):
             if line not in content.splitlines():
                 content = content.rstrip() + ("\n" if content else "") + line + "\n"
         writes[ignore] = content.encode()
@@ -149,7 +150,7 @@ def _installation_lock(root):
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
-            raise LoopError("Another loop-dev installation operation is running in this scope") from exc
+            raise LoopError("Another loop-work installation operation is running in this scope") from exc
         yield
     finally:
         os.close(fd)
@@ -172,27 +173,27 @@ def _safe_path(root, name):
 
 
 def _link_layout(root, scope, source):
-    install_name = ".loop/install" if scope == "project" else ".local/share/loop-dev/install"
+    install_name = ".loop/install" if scope == "project" else ".local/share/loop-work/install"
     base = root / install_name
     wrapper = '''#!/usr/bin/env python3
-"""Managed loop-dev entrypoint. Never fall back to an uninstalled source CLI."""
+"""Managed loop-work entrypoint. Never fall back to an uninstalled source CLI."""
 from pathlib import Path
 import sys
 
 base = Path(__file__).resolve().parent
 runtime = base / "runtime"
-if not (base / "manifest.json").is_file() or not runtime.is_symlink() or not (runtime / "loop_dev/cli.py").is_file():
-    print("loop-dev installation is unavailable; rerun make install from its source checkout", file=sys.stderr)
+if not (base / "manifest.json").is_file() or not runtime.is_symlink() or not (runtime / "loop_work/cli.py").is_file():
+    print("loop-work installation is unavailable; rerun make install from its source checkout", file=sys.stderr)
     raise SystemExit(2)
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(runtime))
-from loop_dev.cli import main
+from loop_work.cli import main
 if __name__ == "__main__":
     raise SystemExit(main(entrypoint=str(base / "loop.py")))
 '''
-    skill = (source / "skills/loop-dev/SKILL.md").read_text(encoding="utf-8")
+    skill = (source / "skills/loop-work/SKILL.md").read_text(encoding="utf-8")
     if not skill.startswith("---\n"):
-        raise LoopError("The loop-dev skill needs YAML frontmatter")
+        raise LoopError("The loop-work skill needs YAML frontmatter")
     files = {install_name + "/loop.py": wrapper.encode()}
     links = {install_name + "/runtime": str(source)}
     for provider, discovery in (("codex", ".agents"), ("claude", ".claude")):
@@ -200,16 +201,16 @@ if __name__ == "__main__":
         files[adapter + "/SKILL.md"] = (skill if provider == "codex" else skill.replace(
             "---\n", "---\ndisable-model-invocation: true\n", 1)).encode()
         if provider == "codex":
-            files[adapter + "/agents/openai.yaml"] = (source / "skills/loop-dev/agents/openai.yaml").read_bytes()
+            files[adapter + "/agents/openai.yaml"] = (source / "skills/loop-work/agents/openai.yaml").read_bytes()
         links[adapter + "/loop.py"] = "../../loop.py"
         links[adapter + "/rules"] = "../../runtime/rules"
-        links[discovery + "/skills/loop-dev"] = str(base / "adapters" / provider)
+        links[discovery + "/skills/loop-work"] = str(base / "adapters" / provider)
     if scope == "project":
         links[".loop/loop.py"] = "install/loop.py"
     return install_name, files, links
 
 
-def _location(home=None, target=None):
+def _location(home=None, target=None, *, legacy=False):
     if target is not None:
         root = project_root(target)
         if root == SOURCE:
@@ -218,7 +219,8 @@ def _location(home=None, target=None):
     root = Path(home).expanduser().resolve() if home is not None else Path.home().resolve()
     if not root.is_dir():
         raise LoopError(f"Home directory does not exist: {root}")
-    return root, "user", ".local/share/loop-dev/install/manifest.json"
+    brand = "loop-dev" if legacy else "loop-work"
+    return root, "user", f".local/share/{brand}/install/manifest.json"
 
 
 def _read_link_manifest(root, scope, manifest_path):
@@ -236,14 +238,15 @@ def _read_link_manifest(root, scope, manifest_path):
         raise LoopError("Invalid link-install manifest; preserve it and reconcile before proceeding")
     # A manifest cannot authorize deleting arbitrary paths. Validate the fixed layout,
     # without needing the original source checkout to exist during uninstall.
-    base = ".loop/install" if scope == "project" else ".local/share/loop-dev/install"
+    brand = "loop-dev" if ".agents/skills/loop-dev" in old["links"] else "loop-work"
+    base = ".loop/install" if scope == "project" else f".local/share/{brand}/install"
     expected_files = {base + "/loop.py", base + "/adapters/codex/SKILL.md",
                       base + "/adapters/claude/SKILL.md", base + "/adapters/codex/agents/openai.yaml"}
     expected_links = {base + "/runtime": old["source"]}
     for provider, discovery in (("codex", ".agents"), ("claude", ".claude")):
         adapter = base + "/adapters/" + provider
         expected_links.update({adapter + "/loop.py": "../../loop.py", adapter + "/rules": "../../runtime/rules",
-                               discovery + "/skills/loop-dev": str(root / adapter)})
+                               discovery + f"/skills/{brand}": str(root / adapter)})
     if scope == "project":
         expected_links[".loop/loop.py"] = "install/loop.py"
     blocks = {"AGENTS.md", "CLAUDE.md", ".gitignore"} if scope == "project" else set()
@@ -256,6 +259,7 @@ def _read_link_manifest(root, scope, manifest_path):
         raise LoopError("Invalid link-install resource records; reconcile before proceeding")
     for name, record in old["entry_blocks"].items():
         start, end = (IGNORE_START, IGNORE_END) if name == ".gitignore" else (START, END)
+        start, end = start.replace("loop-work", brand), end.replace("loop-work", brand)
         block = record["block"]
         if not block.startswith(start) or not block.endswith(end) or block.count(start) != 1 or block.count(end) != 1:
             raise LoopError("Invalid managed block in install manifest")
@@ -287,12 +291,15 @@ def _entry_content(root, name, old, installing):
     previous = old.get("entry_blocks", {}).get(name) if old else None
     marker_start, marker_end, block = ((IGNORE_START, IGNORE_END, IGNORE_BLOCK) if name == ".gitignore"
                                       else (START, END, BLOCK))
+    if previous and "loop-dev:" in previous["block"]:
+        marker_start = marker_start.replace("loop-work", "loop-dev")
+        marker_end = marker_end.replace("loop-work", "loop-dev")
     if marker_start in text or marker_end in text:
         if text.count(marker_start) != 1 or text.count(marker_end) != 1 or text.index(marker_start) > text.index(marker_end):
             raise LoopError(f"Malformed managed block in {name}")
         start, end = text.index(marker_start), text.index(marker_end) + len(marker_end)
         if previous is None or text[start:end] != previous["block"]:
-            raise LoopError(f"Local edits or unowned loop-dev block in {name}; preserve/reconcile before proceeding")
+            raise LoopError(f"Local edits or unowned loop-work block in {name}; preserve/reconcile before proceeding")
         if installing:
             return text[:start] + block.rstrip() + text[end:], {"block": block.rstrip(), "prefix": previous["prefix"]}
         prefix = previous["prefix"]
@@ -307,8 +314,24 @@ def _entry_content(root, name, old, installing):
     return text + prefix + block, {"block": block.rstrip(), "prefix": prefix}
 
 
+def _reject_legacy_install(root, scope):
+    legacy_manifest = root / (".loop/install/manifest.json" if scope == "project"
+                              else ".local/share/loop-dev/install/manifest.json")
+    old_links = any(_present(root / provider / "skills/loop-dev") for provider in (".agents", ".claude"))
+    old_block = scope == "project" and any(
+        (root / name).is_file() and "loop-dev:start" in (root / name).read_text(encoding="utf-8")
+        for name in ("AGENTS.md", "CLAUDE.md"))
+    manifest_legacy = legacy_manifest.is_file() and (scope == "user" or
+        ".agents/skills/loop-dev" in read_json(legacy_manifest).get("links", {}))
+    if old_links or old_block or manifest_legacy:
+        raise LoopError("Existing loop-dev installation: run python3 scripts/install.py --uninstall-legacy "
+                        "(add --target PROJECT for project scope), then make install. "
+                        "Copied/unowned installations need manual reconciliation; records are preserved.")
+
+
 def _install_links(home=None, target=None):
     root, scope, manifest_name = _location(home, target)
+    _reject_legacy_install(root, scope)
     manifest_path = _safe_path(root, manifest_name)
     old = _read_link_manifest(root, scope, manifest_path)
     _preflight_owned(root, old)
@@ -356,14 +379,17 @@ def _install_links(home=None, target=None):
     return manifest_path.parent
 
 
-def _uninstall_links(home=None, target=None):
-    root, scope, manifest_name = _location(home, target)
+def _uninstall_links(home=None, target=None, *, legacy=False):
+    root, scope, manifest_name = _location(home, target, legacy=legacy)
     manifest_path = _safe_path(root, manifest_name)
     old = _read_link_manifest(root, scope, manifest_path)
     if old is None:
         if scope == "project" and (root / ".loop/install.json").exists():
             raise LoopError("This project has a copied legacy installation; make uninstall only removes link installations. Preserve the copy or remove its manifest-owned resources after checking local changes.")
         return manifest_path.parent
+    is_legacy = ".agents/skills/loop-dev" in old["links"]
+    if is_legacy != legacy:
+        raise LoopError("Installation name differs; use --uninstall-legacy for loop-dev, --uninstall for loop-work")
     _preflight_owned(root, old)
     writes = {}
     for name in old["entry_blocks"]:
@@ -400,10 +426,10 @@ def install_links(home=None, target=None):
         return _install_links(home, target)
 
 
-def uninstall_links(home=None, target=None):
+def uninstall_links(home=None, target=None, *, legacy=False):
     root, _, _ = _location(home, target)
     with _installation_lock(root):
-        return _uninstall_links(home, target)
+        return _uninstall_links(home, target, legacy=legacy)
 
 
 def main(argv=None):
@@ -413,22 +439,24 @@ def main(argv=None):
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--link", action="store_true", help="Install discovery links (default scope: user)")
     modes.add_argument("--uninstall", action="store_true", help="Remove only resources owned by a link installation")
+    modes.add_argument("--uninstall-legacy", action="store_true", help="Remove owned loop-dev links before installing loop-work; preserve records")
     args = parser.parse_args(argv)
     try:
         target = args.target
-        if (args.link or args.uninstall) and target is None and os.environ.get("LOOP_INSTALL_TARGET"):
+        if (args.link or args.uninstall or args.uninstall_legacy) and target is None and os.environ.get("LOOP_INSTALL_TARGET"):
             target = Path(os.environ["LOOP_INSTALL_TARGET"])
-        if args.uninstall:
-            root = uninstall_links(args.home, target)
-            print(f"Removed loop-dev discovery and runtime links from {root}; knowledge and task records are preserved.")
+        if args.uninstall or args.uninstall_legacy:
+            root = uninstall_links(args.home, target, legacy=args.uninstall_legacy)
+            brand = "loop-dev" if args.uninstall_legacy else "loop-work"
+            print(f"Removed {brand} discovery and runtime links from {root}; knowledge and task records are preserved.")
         elif args.link or target is None:
             root = install_links(args.home, target)
-            print(f"Linked loop-dev at {root}. Start with /loop-dev in Claude Code or $loop-dev in Codex.")
+            print(f"Linked loop-work at {root}. Start with /loop-work in Claude Code or $loop-work in Codex.")
         else:
             if args.home is not None:
                 raise LoopError("--home applies only to link installation; use --link with --target")
             root = install(target)
-            print(f"Installed loop-dev into {root}. Start with /loop-dev in Claude Code or $loop-dev in Codex; the whole conversation then uses the harness.")
+            print(f"Installed loop-work into {root}. Start with /loop-work in Claude Code or $loop-work in Codex; the whole conversation then uses the harness.")
         return 0
     except (LoopError, OSError, ValueError) as exc:
         print(f"Install failed: {exc}", file=sys.stderr)

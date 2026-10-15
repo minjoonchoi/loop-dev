@@ -7,8 +7,8 @@ import unittest
 from unittest.mock import patch
 
 import test_benchmark as fixtures
-from loop_dev import bench_check, bench_evolution as evolution, bench_report as reports, bench_transport, benchmark as bench
-from loop_dev.storage import LoopError, digest, file_hash, read_json, write_json
+from loop_work import bench_check, bench_evolution as evolution, bench_report as reports, bench_transport, benchmark as bench
+from loop_work.storage import LoopError, digest, file_hash, read_json, write_json
 
 
 class EvolutionTests(unittest.TestCase):
@@ -236,8 +236,8 @@ class EvolutionTests(unittest.TestCase):
         output = self.base / 'check-first'
         def run(*args, **kwargs):
             shutil.copytree(self.root, output)
-        with patch('loop_dev.bench_check.benchmark.run', side_effect=run), \
-             patch('loop_dev.bench_check.bench_report.judge'):
+        with patch('loop_work.bench_check.benchmark.run', side_effect=run), \
+             patch('loop_work.bench_check.bench_report.judge'):
             first = bench_check.check(self.data.spec['models'], self.data.spec['efforts'], candidate=fixtures.SOURCE,
                 suite=self.data.suite_path, providers=['codex'], environment='test host', output=output, history=self.history)
             output = self.base / 'check-second'
@@ -266,9 +266,9 @@ class EvolutionTests(unittest.TestCase):
             if path.name == 'baselines.json':
                 raise OSError('History storage unavailable')
             return write_json(path, value)
-        with patch('loop_dev.bench_check.benchmark.run', side_effect=lambda *a, **kw: shutil.copytree(self.root, output)), \
-             patch('loop_dev.bench_check.bench_report.judge'), \
-             patch('loop_dev.bench_evolution.write_json', side_effect=write):
+        with patch('loop_work.bench_check.benchmark.run', side_effect=lambda *a, **kw: shutil.copytree(self.root, output)), \
+             patch('loop_work.bench_check.bench_report.judge'), \
+             patch('loop_work.bench_evolution.write_json', side_effect=write):
             value = bench_check.check(self.data.spec['models'], self.data.spec['efforts'], candidate=fixtures.SOURCE,
                 suite=self.data.suite_path, providers=['codex'], environment='test host', output=output, history=self.history)
         self.assertFalse(value['passed'])
@@ -281,7 +281,7 @@ class EvolutionTests(unittest.TestCase):
 
     def test_invalid_history_fails_before_any_model_call(self):
         write_json(self.history / 'baselines.json', {'version': 1, 'baselines': {'bad': {'run': 'missing'}}})
-        with patch('loop_dev.bench_check.benchmark.run') as run, self.assertRaisesRegex(LoopError, 'Invalid before-run'):
+        with patch('loop_work.bench_check.benchmark.run') as run, self.assertRaisesRegex(LoopError, 'Invalid before-run'):
             bench_check.check(self.data.spec['models'], self.data.spec['efforts'], candidate=fixtures.SOURCE,
                 suite=self.data.suite_path, history=self.history)
         run.assert_not_called()

@@ -25,7 +25,7 @@ def check(models, efforts, *, candidate=None, suite=None, providers=None,
     spec = benchmark.prepare(suite, candidate, models, providers, repeats, seed, environment, efforts, evaluation,
                              routing_profile)
     spec['source'] = {k: {'hash': v['hash']} for k, v in spec['source'].items()}
-    output = Path(output).resolve() if output else candidate.parent / 'loop-dev-benchmarks' / (
+    output = Path(output).resolve() if output else candidate.parent / 'loop-work-benchmarks' / (
         datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '-' + uuid.uuid4().hex[:8])
     if output.exists() or output.is_relative_to(candidate) or output.is_relative_to(suite.parent):
         raise LoopError('Use a new benchmark output directory outside source/suite trees')

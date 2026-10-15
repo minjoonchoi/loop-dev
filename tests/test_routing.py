@@ -6,9 +6,9 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from loop_dev.routing import (escalate_profile, load_policy, policy_seal, select_profile,
+from loop_work.routing import (escalate_profile, load_policy, policy_seal, select_profile,
                               validate_planning, validate_policy, validate_splits)
-from loop_dev.storage import LoopError
+from loop_work.storage import LoopError
 
 
 def policy():

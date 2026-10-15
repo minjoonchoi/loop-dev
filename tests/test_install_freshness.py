@@ -3,11 +3,11 @@ from pathlib import Path
 import shutil
 from unittest.mock import patch
 
-from loop_dev import storage
-from loop_dev.delegation import Delegation
-from loop_dev.session import Session
-from loop_dev.storage import LoopError, digest, engine_digest, inside, snapshot, write_json
-from loop_dev.work import Work
+from loop_work import storage
+from loop_work.delegation import Delegation
+from loop_work.session import Session
+from loop_work.storage import LoopError, digest, engine_digest, inside, snapshot, write_json
+from loop_work.work import Work
 from support import FAKE_CLI, ProjectTest, fixture_assessment
 from test_delegation import WORKER_BRANCH, assignment
 
@@ -17,9 +17,9 @@ class InstallFreshnessTests(ProjectTest):
         super().setUp()
         self.source = Path(self.temp.name) / "runtime"
         original = Path(storage.__file__).resolve().parent.parent
-        for name in ("loop_dev", "rules", "skills"):
+        for name in ("loop_work", "rules", "skills"):
             shutil.copytree(original / name, self.source / name)
-        linked = patch.object(storage, "__file__", str(self.source / "loop_dev/storage.py"))
+        linked = patch.object(storage, "__file__", str(self.source / "loop_work/storage.py"))
         linked.start()
         self.addCleanup(linked.stop)
         self.kb = self.engine.knowledge
@@ -38,8 +38,8 @@ class InstallFreshnessTests(ProjectTest):
 
     def test_bounded_policy_seal_detects_code_rules_and_skill_metadata(self):
         before = snapshot(self.root)
-        for relative in ("loop_dev/cli.py", "rules/work.md", "skills/loop-dev/SKILL.md",
-                         "skills/loop-dev/agents/openai.yaml"):
+        for relative in ("loop_work/cli.py", "rules/work.md", "skills/loop-work/SKILL.md",
+                         "skills/loop-work/agents/openai.yaml"):
             with self.subTest(relative=relative):
                 seal = engine_digest()
                 self.mutate(relative)
@@ -70,7 +70,7 @@ class InstallFreshnessTests(ProjectTest):
                 decision = self.topic(id="decision-" + root.name, kind="decision", paths=[],
                                       basis="user", applies_to="This checkout only")
                 self.kb.remember(decision, [location], digest(self.kb.observe([location])))
-                self.mutate("skills/loop-dev/SKILL.md")
+                self.mutate("skills/loop-work/SKILL.md")
                 context = self.kb.context([location])
                 self.assertIn("harness_changed", next(x for x in context["stale"] if x["id"] == entry["id"])["stale_reasons"])
                 self.assertIn(decision["id"], [x["id"] for x in context["reusable"]])
@@ -131,11 +131,11 @@ class InstallFreshnessTests(ProjectTest):
         (adapter / "agents/openai.yaml").write_text("policy: explicit\n")
         discovery = self.root / ".agents/skills"
         discovery.mkdir(parents=True)
-        (discovery / "loop-dev").symlink_to(adapter, target_is_directory=True)
+        (discovery / "loop-work").symlink_to(adapter, target_is_directory=True)
         observed = self.kb.observe([self.kb.attach(self.root)])
         rules = next(iter(observed.values()))["rules"]
-        self.assertIn(".agents/skills/loop-dev/SKILL.md", rules)
-        self.assertTrue(inside(self.root, ".agents/skills/loop-dev/SKILL.md").is_file())
+        self.assertIn(".agents/skills/loop-work/SKILL.md", rules)
+        self.assertTrue(inside(self.root, ".agents/skills/loop-work/SKILL.md").is_file())
         (self.root / "external").symlink_to(self.source, target_is_directory=True)
         with self.assertRaisesRegex(LoopError, "escapes repository"):
             inside(self.root, "external/rules/work.md")

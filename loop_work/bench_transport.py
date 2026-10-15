@@ -269,7 +269,7 @@ def prepare_transport(directory, models, max_calls, executables=None, efforts=No
     for provider in models:
         path = binary_dir / provider
         path.write_text('#!' + sys.executable + '\nimport sys\nsys.path.insert(0, ' + repr(package_root) +
-                        ')\nfrom loop_dev.bench_transport import relay\nrelay(' + repr(provider) + ')\n')
+                        ')\nfrom loop_work.bench_transport import relay\nrelay(' + repr(provider) + ')\n')
         path.chmod(0o700)
     return {'PATH': str(binary_dir) + os.pathsep + os.environ.get('PATH', ''),
             'LOOP_BENCH_PROFILE': str(directory / 'profile.json'),

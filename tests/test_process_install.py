@@ -10,8 +10,8 @@ import sys
 import time
 from unittest.mock import patch
 
-from loop_dev.process import execute
-from loop_dev.storage import LoopError, locked
+from loop_work.process import execute
+from loop_work.storage import LoopError, locked
 from support import ProjectTest
 
 
@@ -41,7 +41,7 @@ class InstallationTests(ProjectTest):
 
     def test_local_engine_changes_and_modified_entry_blocks_are_not_overwritten(self):
         installer.install(self.root)
-        engine_file = self.root / ".loop/loop_dev/engine.py"
+        engine_file = self.root / ".loop/loop_work/engine.py"
         engine_file.write_text("# local customization\n")
         with self.assertRaisesRegex(LoopError, "Local changes"):
             installer.install(self.root)

@@ -8,11 +8,11 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from loop_dev.engine import Engine
-from loop_dev.harness import Harness
-from loop_dev.knowledge import KnowledgeBase
-from loop_dev.storage import HARNESS_SKILL_FILES, LoopError, read_json, rule_manifest
-from loop_dev.work import Work
+from loop_work.engine import Engine
+from loop_work.harness import Harness
+from loop_work.knowledge import KnowledgeBase
+from loop_work.storage import HARNESS_SKILL_FILES, LoopError, read_json, rule_manifest
+from loop_work.work import Work
 from scripts import install as installer
 from support import ProjectTest, use_fake_routing
 
@@ -132,7 +132,7 @@ class ConversationTests(unittest.TestCase):
                  'summary': 'The guide explains the result.', 'evidence': ['guide.md:1'], 'paths': ['guide.md']}
         before = self.kb.context(locations)
         self.kb.remember(entry, locations, before['revision'])
-        skill = self.root / '.agents/skills/loop-dev/agents/openai.yaml'
+        skill = self.root / '.agents/skills/loop-work/agents/openai.yaml'
         skill.write_text(skill.read_text() + '\n# changed policy\n')
         self.assertIn('rules_or_branch_changed', self.kb.context(locations)['stale'][0]['stale_reasons'])
 
@@ -149,7 +149,7 @@ class SkillInstallationTests(ProjectTest):
         with patch.object(installer, 'managed_files', return_value=legacy), patch.object(installer, 'BLOCK', old_block):
             installer.install(self.root)
         installer.install(self.root)
-        canonical = (SOURCE / 'skills/loop-dev/SKILL.md').read_text()
+        canonical = (SOURCE / 'skills/loop-work/SKILL.md').read_text()
         self.assertEqual((self.root / HARNESS_SKILL_FILES[0]).read_text(), canonical)
         claude = (self.root / HARNESS_SKILL_FILES[2]).read_text()
         self.assertEqual(claude.replace('disable-model-invocation: true\n', '', 1), canonical)

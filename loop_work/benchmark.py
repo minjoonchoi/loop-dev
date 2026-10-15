@@ -20,7 +20,7 @@ from .storage import LoopError, digest, file_hash, inside, now, read_json, write
 
 ARMS = ('plain', 'candidate')
 KINDS = ('development', 'document', 'explanation', 'research', 'review', 'planning', 'session')
-SOURCE_PATHS = ('scripts/loop.py', 'scripts/install.py', 'scripts/benchmark.py', 'loop_dev/', 'rules/', 'templates/', 'skills/loop-dev/')
+SOURCE_PATHS = ('scripts/loop.py', 'scripts/install.py', 'scripts/benchmark.py', 'loop_work/', 'rules/', 'templates/', 'skills/loop-work/')
 
 
 def integer(value, low, high, label):
@@ -74,8 +74,9 @@ def load_suite(path):
         if not fixture.is_dir():
             raise LoopError('Case fixture directory is missing')
         file_map = directory_files(fixture)
-        if any('.loop' in Path(p).parts or p.startswith(('.agents/skills/loop-dev/', '.claude/skills/loop-dev/')) for p in file_map):
-            raise LoopError('Fixtures must not contain loop-dev installation or state')
+        if any('.loop' in Path(p).parts or p.startswith(('.agents/skills/loop-work/', '.claude/skills/loop-work/',
+                                                           '.agents/skills/loop-dev/', '.claude/skills/loop-dev/')) for p in file_map):
+            raise LoopError('Fixtures must not contain loop-work installation or state')
         roots = case.get('roots')
         if not isinstance(roots, list) or not roots or not all(isinstance(x, str) for x in roots) or len(set(roots)) != len(roots):
             raise LoopError('Case needs distinct repository roots')
@@ -169,7 +170,10 @@ def comparison_arms(spec):
 def source_snapshot(root):
     root = Path(root).resolve()
     contents = {}
-    for selector in SOURCE_PATHS:
+    legacy = not (root / 'loop_work/engine.py').is_file() and (root / 'loop_dev/engine.py').is_file()
+    selectors = tuple(path.replace('loop_work', 'loop_dev').replace('loop-work', 'loop-dev')
+                      for path in SOURCE_PATHS) if legacy else SOURCE_PATHS
+    for selector in selectors:
         path = root / selector
         candidates = path.rglob('*') if selector.endswith('/') else [path]
         for p in candidates:
@@ -179,7 +183,8 @@ def source_snapshot(root):
                 raise LoopError('Harness source must not use symlinks')
             if p.is_file():
                 contents[p.relative_to(root).as_posix()] = p.read_text()
-    if not {'scripts/install.py', 'scripts/loop.py', 'rules/work.md', 'loop_dev/engine.py'}.issubset(contents):
+    engine = 'loop_dev/engine.py' if legacy else 'loop_work/engine.py'
+    if not {'scripts/install.py', 'scripts/loop.py', 'rules/work.md', engine}.issubset(contents):
         raise LoopError('Harness snapshot lacks required install/runtime files')
     return {'hash': digest(contents), 'files': contents}
 
@@ -308,7 +313,7 @@ def run_trial(root, spec, case, provider, repeat, arm, sources, suite_home, exec
                            'budget. Omitted flags use the pinned conversation pair; an explicit allowed selection '
                            'is preserved. Import this catalog before freezing any task execution settings.')
             if index == 0 and arm != 'plain':
-                prompt = ('/loop-dev ' if provider == 'claude' else '$loop-dev ') + prompt
+                prompt = ('/loop-work ' if provider == 'claude' else '$loop-work ') + prompt
             value = bench_transport.conversation(provider, spec['models'][provider], workspace / turn['root'], trial,
                          trial / 'turns' / str(index), prompt, session, remaining, env)
             session = value['session']

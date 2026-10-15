@@ -13,5 +13,5 @@ if base.name in (".agents", ".claude"):
 else:
     entrypoint = base / "scripts/loop.py"
 if not entrypoint.is_file():
-    raise SystemExit("loop-dev is unavailable; stop harness routing and reinstall before explicit activation.")
+    raise SystemExit("loop-work is unavailable; stop harness routing and reinstall before explicit activation.")
 runpy.run_path(str(entrypoint), run_name="__main__")

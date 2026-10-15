@@ -6,10 +6,10 @@ import subprocess
 import sys
 from unittest.mock import patch
 
-from loop_dev.engine import Engine
-from loop_dev.session import Session
-from loop_dev.work import Work
-from loop_dev.storage import LoopError, read_json, snapshot, write_json
+from loop_work.engine import Engine
+from loop_work.session import Session
+from loop_work.work import Work
+from loop_work.storage import LoopError, read_json, snapshot, write_json
 from support import ProjectTest
 
 

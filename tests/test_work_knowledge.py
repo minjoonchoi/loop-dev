@@ -9,9 +9,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from loop_dev.knowledge import KnowledgeBase
-from loop_dev.storage import LoopError, digest
-from loop_dev.work import Work
+from loop_work.knowledge import KnowledgeBase
+from loop_work.storage import LoopError, digest
+from loop_work.work import Work
 from scripts.install import install
 from support import use_fake_routing
 
@@ -191,8 +191,8 @@ class KnowledgeTests(unittest.TestCase):
 
     def test_non_development_kinds_complete_without_provider_calls_or_project_writes(self):
         original = {p.name: p.read_bytes() for p in self.root.iterdir()}
-        with patch("loop_dev.providers.review", side_effect=AssertionError("Unexpected review")), \
-             patch("loop_dev.providers.doctor", side_effect=AssertionError("Unexpected provider requirement")):
+        with patch("loop_work.providers.review", side_effect=AssertionError("Unexpected review")), \
+             patch("loop_work.providers.doctor", side_effect=AssertionError("Unexpected provider requirement")):
             for kind in ("document", "explanation", "research", "review", "planning"):
                 with self.subTest(kind=kind):
                     task = self.started(kind)

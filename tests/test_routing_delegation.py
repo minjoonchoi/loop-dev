@@ -6,11 +6,11 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
-from loop_dev import providers
-from loop_dev.delegation import Delegation
-from loop_dev.orchestration import Orchestration
-from loop_dev.storage import LoopError, digest, file_hash, read_json, write_json
-from loop_dev.team import Team
+from loop_work import providers
+from loop_work.delegation import Delegation
+from loop_work.orchestration import Orchestration
+from loop_work.storage import LoopError, digest, file_hash, read_json, write_json
+from loop_work.team import Team
 from support import FAKE_CLI, ProjectTest, fixture_assessment
 from test_delegation import WORKER_BRANCH, assignment
 from test_team import TEAM_BRANCH, plan

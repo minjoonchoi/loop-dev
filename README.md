@@ -1,4 +1,4 @@
-# loop-dev
+# loop-work
 
 **목표를 말하면 맥락을 복원하고, 작업을 수행하고, 결과를 확인해 기록하는 Claude Code·Codex 공통 하네스**입니다.
 
@@ -18,8 +18,8 @@
 계정에서 사용할 모델을 확인하지 않은 채 CLI 기본값으로 실행하지 않습니다.
 
 ```sh
-git clone https://github.com/minjoonchoi/loop-dev.git
-cd loop-dev
+git clone https://github.com/minjoonchoi/loop-work.git
+cd loop-work
 # 범위를 하나 선택: 모든 프로젝트
 make install
 # 또는 특정 프로젝트만
@@ -30,8 +30,8 @@ make install
 
 | 환경 | 시작 입력 |
 | --- | --- |
-| Claude Code | `/loop-dev 메모를 저장하고 조회하는 CLI를 만들어 줘` |
-| Codex | `$loop-dev 메모를 저장하고 조회하는 CLI를 만들어 줘` |
+| Claude Code | `/loop-work 메모를 저장하고 조회하는 CLI를 만들어 줘` |
+| Codex | `$loop-work 메모를 저장하고 조회하는 CLI를 만들어 줘` |
 
 이후에는 “저장 방식을 설명해 줘”, “다른 폴더의 README도 고쳐 줘”처럼 평소대로 요청합니다.
 **목표 완료·새 목표·문서나 설명 요청·폴더 이동 후에도 활성화는 유지**됩니다. 진행 질문,
@@ -52,8 +52,8 @@ make install
 Claude는 `disable-model-invocation: true`, Codex는 `allow_implicit_invocation: false`로
 최초 자동 호출을 끕니다. 이 설정은 활성화 이후의 대화 규칙을 해제하지 않습니다.
 
-`make install`은 사용자 스킬 경로 `~/.agents/skills/loop-dev`와
-`~/.claude/skills/loop-dev`를 `~/.local/share/loop-dev/install`의 관리 어댑터에 연결합니다.
+`make install`은 사용자 스킬 경로 `~/.agents/skills/loop-work`와
+`~/.claude/skills/loop-work`를 `~/.local/share/loop-work/install`의 관리 어댑터에 연결합니다.
 `TARGET=/absolute/path/to/project`는 그 프로젝트의 `.agents/skills/`·`.claude/skills/`와
 `.loop/install`을 사용합니다. 기존 지침·다른 스킬·설정과 로컬 변경은 보존합니다.
 런타임과 규칙은 원본 저장소를 참조합니다. 원본을 옮겼다면 새 위치에서 같은 설치 명령을
@@ -76,6 +76,25 @@ make uninstall
 설치/해제는 반복 실행해도 안전하며 충돌은 파일 변경 전에 거절합니다. 프로젝트 설치는
 호스트별 연결·런타임·상태의 관리 `.gitignore` 블록을 추가합니다. 해제는 목표·상태·지식 기록을
 보존하고, 상태 기록이 남으면 `/.loop/state/` 제외 규칙도 남깁니다.
+
+## 기존 loop-dev 설치에서 전환
+
+기존 연결 설치가 있으면 새 설치는 변경 없이 중단합니다. 원본 저장소에서 기존 연결을 제거한 뒤 설치합니다.
+
+```sh
+python3 scripts/install.py --uninstall-legacy
+make install
+# 프로젝트 범위는 두 명령 모두 같은 경로 지정
+# python3 scripts/install.py --uninstall-legacy --target /absolute/project
+# make TARGET=/absolute/project install
+```
+
+수정된 기존 설치 파일은 덮어쓰거나 삭제하지 않습니다. 복사 설치는 자동 전환하지 않으며
+기존 manifest의 소유 파일과 로컬 수정을 대조해 정리한 뒤 연결 설치합니다.
+기존 `~/.local/share/loop-dev/knowledge.sqlite3`가 있으면 그 위치를 계속 사용해 기록과 전달물 경로를
+보존합니다. 새 이름과 옛 이름의 DB가 모두 있으면 `LOOP_KB_HOME`으로 사용할 것을 명시해야 합니다.
+`.loop/`의 목표·상태와 `LOOP_*` 환경 변수는 그대로 유지합니다. 새 대화에서 `/loop-work` 또는
+`$loop-work`로 활성화합니다. 이전 연결 진입점은 전환 안내와 함께 중단하고 자동 실행하지 않습니다.
 
 ## 두 단계의 역할
 
@@ -174,7 +193,7 @@ flowchart TD
 - 에이전트가 변경을 조사한 뒤 해당 항목을 갱신합니다. 조회만으로 오래된 결론을 최신으로 만들지 않습니다.
 - 확정 사실·초안·가설·과거 결과를 구분합니다. 과거 성공 기록은 현재 검증이나 새로운 권한을 대신하지 않습니다.
 
-기본 위치는 `~/.local/share/loop-dev/`이며 `LOOP_KB_HOME` 또는 `--knowledge-home`으로
+기본 위치는 `~/.local/share/loop-work/`이며 `LOOP_KB_HOME` 또는 `--knowledge-home`으로
 변경할 수 있습니다. 프로젝트 밖에 두며 전역 공급자 설정을 수정하지 않습니다.
 세션 ID와 저장 명령은 에이전트가 관리합니다.
 
@@ -211,7 +230,7 @@ flowchart TD
 
 | 위치 | 내용 |
 | --- | --- |
-| `.agents/skills/loop-dev/`, `.claude/skills/loop-dev/` | 환경별 명시적 스킬 진입점 |
+| `.agents/skills/loop-work/`, `.claude/skills/loop-work/` | 환경별 명시적 스킬 진입점 |
 | `.loop/goals/<id>/` | 개발 목표와 최초 진단; Git 포함 권장 |
 | `.loop/state/<id>/` | 개발 상태·검증 로그·맥락·`status.md`; Git 제외 |
 | `.loop/state/sessions/` | 개발 세션의 분석과 이전 답변; Git 제외 |

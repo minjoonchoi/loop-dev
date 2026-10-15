@@ -128,7 +128,7 @@ fresh code evidence or publishing/deployment permission.
 
 ## Knowledge boundaries
 
-The local store defaults to `~/.local/share/loop-dev/knowledge.sqlite3`; choose another
+The local store defaults to `~/.local/share/loop-work/knowledge.sqlite3`; choose another
 external-to-source home with `LOOP_KB_HOME`/`--knowledge-home`. Store no credentials.
 `knowledge projects` lists identities/checkouts. Git origin groups remote clones;
 local worktrees share common-directory identity; ordinary directories use filesystem

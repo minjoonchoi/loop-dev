@@ -8,9 +8,9 @@ import subprocess
 import sys
 from unittest.mock import patch
 
-from loop_dev.delegation import Delegation, validate_request, validate_result
-from loop_dev.storage import LoopError, file_hash, locked, read_json, write_json, write_text
-from loop_dev.work import Work
+from loop_work.delegation import Delegation, validate_request, validate_result
+from loop_work.storage import LoopError, file_hash, locked, read_json, write_json, write_text
+from loop_work.work import Work
 from support import FAKE_CLI, ProjectTest, accept_fixture, fixture_assessment
 
 
@@ -129,7 +129,7 @@ class DelegationTests(ProjectTest):
     def test_prestart_and_paths_cannot_expand_authority(self):
         with self.assertRaisesRegex(LoopError, "before start"):
             self.accepted(assignment(kind="implementation", writes=["value.py"]))
-        for name in ("../outside", "/tmp/outside", "src/../value.py", "src/*", "AGENTS.md", "src/CLAUDE.md", ".loop/state/hack", ".claude/settings.json", ".agents/skills/loop-dev/SKILL.md", ".agents/skills/loop-dev/agents/openai.yaml"):
+        for name in ("../outside", "/tmp/outside", "src/../value.py", "src/*", "AGENTS.md", "src/CLAUDE.md", ".loop/state/hack", ".claude/settings.json", ".agents/skills/loop-work/SKILL.md", ".agents/skills/loop-work/agents/openai.yaml"):
             with self.subTest(name=name), self.assertRaises(LoopError):
                 validate_request(assignment(kind="implementation", writes=[name]), self.root, "running", True, ["AGENTS.md"])
         (self.root / "alias").symlink_to(self.root, target_is_directory=True)
@@ -219,7 +219,7 @@ class DelegationTests(ProjectTest):
                 self.assertEqual(result["assignment"]["attempts"], count)
         with self.assertRaisesRegex(LoopError, "budget exhausted"):
             self.accepted(request)
-        with patch("loop_dev.providers.structured_call", side_effect=KeyboardInterrupt):
+        with patch("loop_work.providers.structured_call", side_effect=KeyboardInterrupt):
             with self.assertRaises(KeyboardInterrupt):
                 self.accepted(assignment("interrupted"))
         with self.assertRaisesRegex(LoopError, "--recover"):
@@ -340,7 +340,7 @@ class DelegationTests(ProjectTest):
     def test_ignored_write_target_rejected_before_call(self):
         self.running()
         (self.root / ".gitignore").write_text(".loop/state/\nignored/\n")
-        with patch("loop_dev.providers.structured_call", side_effect=AssertionError("must not call")):
+        with patch("loop_work.providers.structured_call", side_effect=AssertionError("must not call")):
             with self.assertRaisesRegex(LoopError, "ignored"):
                 self.accepted(assignment("ignored-output", "implementation", ["ignored/new.py"]))
         self.assertFalse((self.root / "ignored/new.py").exists())
@@ -366,7 +366,7 @@ class DelegationTests(ProjectTest):
                 (self.root / "check.py").write_text("outside edit\n")
 
         with patch.dict(os.environ, {"LOOP_WORKER_EDITS": json.dumps({"value.py": "VALUE = 2\n"})}), \
-                patch("loop_dev.delegation.write_text", side_effect=external_change):
+                patch("loop_work.delegation.write_text", side_effect=external_change):
             failed = self.accepted(assignment("racing-edit", "implementation", ["value.py"]))
         self.assertFalse(failed["passed"])
         self.assertIn("Unexpected source", failed["assignment"]["error"])

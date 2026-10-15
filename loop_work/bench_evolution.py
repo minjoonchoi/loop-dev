@@ -16,8 +16,16 @@ SEALED_FILES = ('manifest.json', 'index.json', 'judgments.json', 'check.json', '
 
 
 def location(candidate, history=None):
-    return Path(history).resolve() if history else (
-        candidate.parent / 'loop-dev-benchmarks/history' / digest(str(candidate))[:16])
+    if history:
+        return Path(history).resolve()
+    key = digest(str(candidate))[:16]
+    current = candidate.parent / 'loop-work-benchmarks/history' / key
+    legacy = candidate.parent / 'loop-dev-benchmarks/history' / key
+    if legacy.exists():
+        if current.exists() and current.resolve() != legacy.resolve():
+            raise LoopError('Both loop-work and loop-dev benchmark histories exist; choose --history explicitly')
+        return legacy
+    return current
 
 
 def read_history(history):

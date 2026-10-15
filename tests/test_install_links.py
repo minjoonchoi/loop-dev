@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import patch
 
 from scripts import install as installer
-from loop_dev.storage import LoopError, rule_manifest
+from loop_work.storage import LoopError, rule_manifest
 
 
 SOURCE = Path(__file__).resolve().parents[1]
@@ -38,7 +38,7 @@ class LinkInstallationTests(unittest.TestCase):
             path = self.home / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("user rules and settings\n")
-        kb = self.home / ".local/share/loop-dev/knowledge.sqlite3"
+        kb = self.home / ".local/share/loop-work/knowledge.sqlite3"
         kb.parent.mkdir(parents=True)
         kb.write_bytes(b"existing knowledge")
         managed = installer.install_links(self.home)
@@ -48,7 +48,7 @@ class LinkInstallationTests(unittest.TestCase):
         self.assertEqual(first, (managed / "manifest.json").read_bytes())
         self.assertEqual(wrapper_time, (managed / "loop.py").stat().st_mtime_ns)
         for provider, discovery in (("codex", ".agents"), ("claude", ".claude")):
-            skill = self.home / discovery / "skills/loop-dev"
+            skill = self.home / discovery / "skills/loop-work"
             self.assertTrue(skill.is_symlink())
             self.assertEqual(skill.resolve(), managed / "adapters" / provider)
             self.assertTrue((skill / "loop.py").is_symlink())
@@ -60,11 +60,11 @@ class LinkInstallationTests(unittest.TestCase):
         for name in ("AGENTS.md", "CLAUDE.md", ".claude/settings.json", ".codex/config.toml"):
             self.assertEqual((self.home / name).read_text(), "user rules and settings\n")
         self.assertEqual(kb.read_bytes(), b"existing knowledge")
-        self.assertFalse((self.home / ".agents/skills/loop-dev").is_symlink())
+        self.assertFalse((self.home / ".agents/skills/loop-work").is_symlink())
 
     def test_wrapper_retains_install_binding_after_cwd_changes_and_is_removed(self):
         managed = installer.install_links(self.home)
-        adapter = self.home / ".agents/skills/loop-dev/loop.py"
+        adapter = self.home / ".agents/skills/loop-work/loop.py"
         on = self.run_cli(adapter, "harness", "on", "--provider", "codex")
         self.assertEqual(on.returncode, 0, on.stderr)
         activation = json.loads(on.stdout)
@@ -93,7 +93,7 @@ class LinkInstallationTests(unittest.TestCase):
         self.assertFalse((self.project / ".loop/rules").exists())
         self.assertEqual((self.project / ".loop/loop.py").resolve(), managed / "loop.py")
         rules = rule_manifest(self.project, [])
-        self.assertIn(".agents/skills/loop-dev/SKILL.md", rules)
+        self.assertIn(".agents/skills/loop-work/SKILL.md", rules)
         for name in (".loop/goals/example/goal.json", ".loop/state/example/state.json"):
             path = self.project / name
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -109,14 +109,14 @@ class LinkInstallationTests(unittest.TestCase):
             self.assertEqual((self.project / name).read_text(), "retained record\n")
 
     def test_every_install_conflict_is_preflighted_including_dangling_links(self):
-        blocked = self.home / ".claude/skills/loop-dev"
+        blocked = self.home / ".claude/skills/loop-work"
         blocked.parent.mkdir(parents=True)
         blocked.symlink_to(self.base / "missing-owner")
         with self.assertRaisesRegex(LoopError, "Unowned"):
             installer.install_links(self.home)
         self.assertTrue(blocked.is_symlink())
         self.assertFalse((self.home / ".agents").exists())
-        self.assertFalse((self.home / ".local/share/loop-dev/install").exists())
+        self.assertFalse((self.home / ".local/share/loop-work/install").exists())
         blocked.unlink()
         managed = installer.install_links(self.home)
         (managed / "adapters/claude/SKILL.md").write_text("my changed skill")
@@ -125,7 +125,7 @@ class LinkInstallationTests(unittest.TestCase):
             with self.assertRaisesRegex(LoopError, "Local changes"):
                 action(self.home)
             self.assertEqual((managed / "loop.py").read_bytes(), wrapper)
-            self.assertTrue((self.home / ".agents/skills/loop-dev").is_symlink())
+            self.assertTrue((self.home / ".agents/skills/loop-work").is_symlink())
 
     def test_modified_project_block_prevents_partial_uninstall(self):
         managed = installer.install_links(target=self.project)
@@ -135,7 +135,7 @@ class LinkInstallationTests(unittest.TestCase):
             installer.uninstall_links(target=self.project)
         self.assertTrue((managed / "loop.py").is_file())
         self.assertIn(installer.START, (self.project / "AGENTS.md").read_text())
-        self.assertTrue((self.project / ".agents/skills/loop-dev").is_symlink())
+        self.assertTrue((self.project / ".agents/skills/loop-work").is_symlink())
 
     def test_project_instruction_bytes_modes_and_ignore_block_are_preserved(self):
         original = {"AGENTS.md": b"Original instructions\r\nSecond line\r\n", "CLAUDE.md": b"Claude instructions\r\n",
@@ -192,8 +192,8 @@ class LinkInstallationTests(unittest.TestCase):
                         operation(self.home)
                     self.assertTrue(self.home.is_dir())
                     self.assertTrue((managed / "loop.py").is_file())
-                    self.assertTrue((self.home / ".agents/skills/loop-dev").is_symlink())
-                    self.assertTrue((self.home / ".claude/skills/loop-dev").is_symlink())
+                    self.assertTrue((self.home / ".agents/skills/loop-work").is_symlink())
+                    self.assertTrue((self.home / ".claude/skills/loop-work").is_symlink())
         manifest.write_text(json.dumps(original))
         installer.uninstall_links(self.home)
         self.assertTrue(self.home.is_dir())
@@ -201,13 +201,13 @@ class LinkInstallationTests(unittest.TestCase):
     def test_source_updates_are_live_and_source_move_can_be_relinked(self):
         source = self.base / "source original"
         source.mkdir()
-        for folder in ("loop_dev", "rules", "skills"):
+        for folder in ("loop_work", "rules", "skills"):
             shutil.copytree(SOURCE / folder, source / folder, ignore=shutil.ignore_patterns("__pycache__"))
         with patch.object(installer, "SOURCE", source):
             managed = installer.install_links(self.home)
         (source / "rules/work.md").write_text("Updated work rules\n")
         self.assertEqual((managed / "adapters/codex/rules/work.md").read_text(), "Updated work rules\n")
-        (source / "skills/loop-dev/SKILL.md").write_text((source / "skills/loop-dev/SKILL.md").read_text() + "\nUpdated canonical skill\n")
+        (source / "skills/loop-work/SKILL.md").write_text((source / "skills/loop-work/SKILL.md").read_text() + "\nUpdated canonical skill\n")
         moved = self.base / "source moved"
         source.rename(moved)
         failed = self.run_cli(managed / "loop.py", "harness", "on", "--provider", "codex")
@@ -224,9 +224,9 @@ class LinkInstallationTests(unittest.TestCase):
 
     def test_uninstall_accepts_missing_owned_links_but_rejects_replaced_links(self):
         managed = installer.install_links(self.home)
-        missing = self.home / ".agents/skills/loop-dev"
+        missing = self.home / ".agents/skills/loop-work"
         missing.unlink()
-        replaced = self.home / ".claude/skills/loop-dev"
+        replaced = self.home / ".claude/skills/loop-work"
         replaced.unlink()
         replaced.symlink_to(self.base / "elsewhere")
         with self.assertRaisesRegex(LoopError, "Local changes"):
@@ -242,7 +242,7 @@ class LinkInstallationTests(unittest.TestCase):
             unrelated = self.project / discovery / "scripts/loop.py"
             unrelated.parent.mkdir(parents=True)
             unrelated.write_text("raise SystemExit('unrelated provider script must not execute')\n")
-            result = self.run_cli(self.project / discovery / "skills/loop-dev/loop.py", "harness", "on", "--provider", provider)
+            result = self.run_cli(self.project / discovery / "skills/loop-work/loop.py", "harness", "on", "--provider", provider)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(json.loads(result.stdout)["entrypoint"], str(self.project / ".loop/loop.py"))
         with self.assertRaisesRegex(LoopError, "copied legacy installation"):
@@ -261,7 +261,7 @@ class LinkInstallationTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse((SOURCE / "OWNED").exists())
         self.assertFalse((SOURCE / "OTHER").exists())
-        self.assertFalse((literal / ".agents/skills/loop-dev").is_symlink())
+        self.assertFalse((literal / ".agents/skills/loop-work").is_symlink())
 
 
 if __name__ == "__main__":

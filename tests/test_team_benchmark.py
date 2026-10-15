@@ -9,7 +9,7 @@ import tempfile
 import textwrap
 import unittest
 
-from loop_dev import benchmark as bench
+from loop_work import benchmark as bench
 
 
 SOURCE = Path(__file__).resolve().parents[1]

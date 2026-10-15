@@ -1,6 +1,6 @@
 # Evaluate the harness by delivered outcomes
 
-Use this rule when evaluating or changing loop-dev itself. Ordinary application
+Use this rule when evaluating or changing loop-work itself. Ordinary application
 work does not need a benchmark experiment. See the source repository's
 `docs/benchmark.md` and `benchmarks/suite.json` for the protocol and starter cases.
 

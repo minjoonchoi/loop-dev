@@ -23,7 +23,7 @@ Harness benchmarking also has a standalone terminal entry point: `scripts/benchm
 It manages its own provider conversations; users do not need to open a chat or activate
 the harness skill before running a benchmark.
 
-The user explicitly starts the loop-dev skill once. Installed AGENTS.md and CLAUDE.md
+The user explicitly starts the loop-work skill once. Installed AGENTS.md and CLAUDE.md
 then route every input in that conversation through `work.md`, including new goals,
 questions, documents, corrections and stops. A goal finishing, a task kind or directory
 changing, and context compaction do not disable activation. Only an explicit off
@@ -41,7 +41,7 @@ This is host-agent routing plus persisted state, not a keyword parser or message
 | Common goal setting and work | `work.py`, `rules/work.md`; development delegates to existing gates |
 | Cross-project knowledge | `knowledge.py`; local SQLite, scoped records and dependency checks |
 | Readable records and derived views | `writing.py`, `rules/writing.md`; deterministic Markdown, concise authored fields |
-| Provider entry | `skills/loop-dev/`, installed discovery files, managed AGENTS.md/CLAUDE.md blocks |
+| Provider entry | `skills/loop-work/`, installed discovery files, managed AGENTS.md/CLAUDE.md blocks |
 | Conversation activation | `harness.py`; explicit on/status/off, shared SQLite session record |
 | Harness outcome benchmarks | `benchmark.py`, `bench_transport.py`, `bench_report.py`; isolated paired runs, external grading, comparison gates |
 | Goal completeness | `contract.py` validates structural traceability and decisions |
@@ -55,7 +55,7 @@ This is host-agent routing plus persisted state, not a keyword parser or message
 ## Installation adapters
 
 `make install` registers user discovery symlinks under `~/.agents/skills` and
-`~/.claude/skills`, backed by owned adapters in `~/.local/share/loop-dev/install`.
+`~/.claude/skills`, backed by owned adapters in `~/.local/share/loop-work/install`.
 `make TARGET=/absolute/project install` instead uses project discovery paths and
 `.loop/install`. Adapters share the canonical skill body; Claude-only metadata is
 added during generation. Their `loop.py` enters the owned wrapper and rules/runtime
@@ -78,6 +78,12 @@ retain their scope and remain reusable.
 Hosts may retain already-loaded skill text after install changes: use a new conversation
 or host reload. An active conversation whose entrypoint disappears stops routing;
 it never selects another runtime or silently reactivates.
+
+Legacy loop-dev links require explicit `scripts/install.py --uninstall-legacy` before
+installing loop-work; ownership checks and preservation apply unchanged. Old linked
+entrypoints fail closed with migration guidance. The previous knowledge home remains
+in use when its database exists; two existing databases require an explicit home.
+No records or artifact paths are moved, and `.loop/` state paths remain stable.
 
 ## Session activation
 
@@ -412,7 +418,7 @@ checks. Rules instruct agents to record the complete read set and directory-leve
 Development session caches remain under ignored `.loop/state/`, protected by the
 repository lock and atomic writes. Entries are imported into shared knowledge with
 their original dependency stamps; import cannot renew stale evidence. Shared knowledge
-defaults to `~/.local/share/loop-dev/` or `LOOP_KB_HOME`, outside source trees. Neither
+defaults to `~/.local/share/loop-work/` or `LOOP_KB_HOME`, outside source trees. Neither
 store changes frozen contracts. Older goal state acquires a stable session binding on
 first context read. Reconciliation is request-driven, not a background watcher.
 

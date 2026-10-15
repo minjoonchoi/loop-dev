@@ -14,9 +14,9 @@ from datetime import datetime, timezone
 
 
 HARNESS_SKILL_FILES = (
-    ".agents/skills/loop-dev/SKILL.md",
-    ".agents/skills/loop-dev/agents/openai.yaml",
-    ".claude/skills/loop-dev/SKILL.md",
+    ".agents/skills/loop-work/SKILL.md",
+    ".agents/skills/loop-work/agents/openai.yaml",
+    ".claude/skills/loop-work/SKILL.md",
 )
 
 
@@ -141,8 +141,8 @@ def harness_digest():
     package = Path(__file__).resolve().parent
     source = package.parent
     paths = list(package.glob("*.py")) + list((source / "rules").glob("*.md"))
-    paths += [source / "skills/loop-dev/SKILL.md",
-              source / "skills/loop-dev/agents/openai.yaml"]
+    paths += [source / "skills/loop-work/SKILL.md",
+              source / "skills/loop-work/agents/openai.yaml"]
     return digest({"version": 1, "files": {
         path.relative_to(source).as_posix(): file_hash(path) for path in sorted(paths)}})
 

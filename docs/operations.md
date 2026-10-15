@@ -12,10 +12,10 @@
 
 스킬 등록 방식은 2026-10-13에 확인한 [Codex 공식 문서](https://learn.chatgpt.com/docs/build-skills)와
 [Claude Code 공식 문서](https://code.claude.com/docs/en/skills)를 따릅니다.
-Codex는 `.agents/skills/loop-dev/agents/openai.yaml`의 `allow_implicit_invocation: false`,
-Claude는 `.claude/skills/loop-dev/SKILL.md`의 `disable-model-invocation: true`를 사용합니다.
-공통 본문은 `skills/loop-dev/SKILL.md` 한 곳에서 관리하고 설치 때 환경별 어댑터를 생성합니다.
-`make install`은 사용자 스킬 경로를 `~/.local/share/loop-dev/install`에 연결합니다.
+Codex는 `.agents/skills/loop-work/agents/openai.yaml`의 `allow_implicit_invocation: false`,
+Claude는 `.claude/skills/loop-work/SKILL.md`의 `disable-model-invocation: true`를 사용합니다.
+공통 본문은 `skills/loop-work/SKILL.md` 한 곳에서 관리하고 설치 때 환경별 어댑터를 생성합니다.
+`make install`은 사용자 스킬 경로를 `~/.local/share/loop-work/install`에 연결합니다.
 프로젝트 범위는 `make TARGET=/absolute/project install`이며 `.loop/install`을 사용합니다.
 런타임/규칙은 원본 저장소를 참조합니다. 원본 이동 뒤에는 새 위치에서 재설치해 연결합니다.
 재설치 전에는 기존 경로를 사용할 수 없습니다. 본문/메타데이터 변경 뒤에도 재설치합니다. 해제는 같은 범위에서 `make uninstall`입니다.
@@ -30,7 +30,7 @@ Claude는 `.claude/skills/loop-dev/SKILL.md`의 `disable-model-invocation: true`
 
 1. 두 CLI가 로컬 터미널에서 설치·로그인되어 있는지 확인합니다.
 2. 대상 저장소에 하네스를 설치하고 Claude Code 또는 Codex를 엽니다.
-3. Claude Code는 `/loop-dev`, Codex는 `$loop-dev`로 스킬을 한 번 시작합니다.
+3. Claude Code는 `/loop-work`, Codex는 `$loop-work`로 스킬을 한 번 시작합니다.
    목표를 같이 적거나 다음 입력에 말하면 에이전트가 구체화합니다.
    그 뒤의 모든 입력은 같은 하네스가 처리하며 새 목표마다 스킬을 다시 호출하지 않습니다.
 4. 에이전트가 `execution.routing`에 작업자·검토자의 명시적 모델·effort 풀을 구성하고

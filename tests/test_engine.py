@@ -4,9 +4,9 @@ import json
 import os
 from unittest.mock import patch
 
-from loop_dev.contract import validate
-from loop_dev.engine import Engine
-from loop_dev.storage import LoopError, read_json, snapshot, write_json
+from loop_work.contract import validate
+from loop_work.engine import Engine
+from loop_work.storage import LoopError, read_json, snapshot, write_json
 from support import ProjectTest
 
 
@@ -257,7 +257,7 @@ class RejectionTests(ProjectTest):
 
     def test_missing_provider_blocks_plan(self):
         (self.bin / "codex").unlink()
-        with patch("loop_dev.providers.shutil.which", return_value=None):
+        with patch("loop_work.providers.shutil.which", return_value=None):
             with self.assertRaisesRegex(LoopError, "Both CLIs"):
                 self.engine.plan_review()
 

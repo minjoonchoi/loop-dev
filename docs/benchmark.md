@@ -74,8 +74,8 @@ python3 scripts/benchmark.py \
 | 반복 / 순서 | 3회 / 시드 0; `--repeats`, `--seed` |
 | 공통 평가자 | 지정한 Codex 모델·effort, 독립 평가 2회 |
 | 평가자 변경 | `--judge-provider`, `--judge-model`, `--judge-effort`, `--judge-repeats` |
-| 결과 경로 | 소스 옆 `loop-dev-benchmarks/<시각>-<실행 ID>/`; `--output` |
-| 전후 비교 기록 | 소스 옆 `loop-dev-benchmarks/history/<소스 경로 ID>/`; `--history` |
+| 결과 경로 | 소스 옆 `loop-work-benchmarks/<시각>-<실행 ID>/`; `--output` |
+| 전후 비교 기록 | 소스 옆 `loop-work-benchmarks/history/<소스 경로 ID>/`; `--history` |
 | 환경 기록 | 현재 OS·아키텍처와 CLI 프로필 해시; `--environment`로 설명 지정 |
 | 작업별 모델 선택 평가 | 기본은 고정 설정; `--routing-profile FILE`로 공통 허용 풀 지정 |
 
@@ -301,3 +301,7 @@ Codex의 보고 토큰과 Claude의 세션 누적 비용 추정치를 보존합�
 중복 합산하지 않으며, 알 수 없는 값은 `null`입니다. 공급자 내부 작업의 완전한 사용량이나
 두 공급자를 합친 실제 청구액을 추정해 채우지 않습니다. 실행 한도는 관리하는 CLI 호출에
 적용하며, 독립 프로세스를 고의로 남기는 코드까지 격리하는 장치는 아닙니다.
+
+기존 `loop-dev-benchmarks/history/<소스 경로 ID>/`가 있으면 같은 소스 경로에서 계속 사용합니다.
+두 이름의 기록이 모두 있으면 `--history`로 선택해야 합니다. 소스 디렉터리 이름도 바꾸면
+기존 기록의 절대 경로를 `--history`로 지정하고, 기존 실행 결과 폴더는 옮기지 않습니다.

@@ -6,10 +6,10 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
-from loop_dev import providers
-from loop_dev.orchestration import Orchestration, worker_context
-from loop_dev.storage import LoopError, locked, read_json, write_json
-from loop_dev.team import Team
+from loop_work import providers
+from loop_work.orchestration import Orchestration, worker_context
+from loop_work.storage import LoopError, locked, read_json, write_json
+from loop_work.team import Team
 from support import FAKE_CLI, ProjectTest, complete_fixture_team
 from test_delegation import assignment
 
@@ -274,7 +274,7 @@ class TeamTests(ProjectTest):
             return value
 
         with patch.dict(os.environ, {"LOOP_TEAM_EDITS": json.dumps({"alpha": {"value.py": "VALUE = 2\n"}})}):
-            with patch("loop_dev.providers.structured_call", side_effect=pause_after_call):
+            with patch("loop_work.providers.structured_call", side_effect=pause_after_call):
                 blocked = self.complete(request)
             self.assertFalse(blocked["passed"])
             self.assertIn("paused", blocked["error"])
@@ -323,7 +323,7 @@ class TeamTests(ProjectTest):
 
     def test_interruption_requires_inspection_and_retains_both_counters(self):
         request = plan("alpha", "beta")
-        with patch("loop_dev.providers.structured_call", side_effect=KeyboardInterrupt):
+        with patch("loop_work.providers.structured_call", side_effect=KeyboardInterrupt):
             with self.assertRaises(KeyboardInterrupt):
                 self.complete(request)
         with self.assertRaisesRegex(LoopError, "--recover"):
@@ -361,7 +361,7 @@ class TeamTests(ProjectTest):
         request["members"][1]["assignment"] = assignment("beta", "implementation", ["value.py"])
         # beta is a prerequisite of gamma, so its write occurs before delivery.
         request["members"][2]["assignment"]["depends_on"] = ["beta"]
-        with patch("loop_dev.providers.structured_call", side_effect=run), patch.dict(os.environ, {"LOOP_TEAM_EDITS": json.dumps({"beta": {"value.py": "VALUE = 2\n"}})}):
+        with patch("loop_work.providers.structured_call", side_effect=run), patch.dict(os.environ, {"LOOP_TEAM_EDITS": json.dumps({"beta": {"value.py": "VALUE = 2\n"}})}):
             result = self.complete(request)
         self.assertFalse(result["passed"])
         self.assertIn("peer answer or finding is stale", result["error"])

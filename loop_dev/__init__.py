@@ -1,3 +1,1 @@
-"""Conversation-led development gates shared by Claude Code and Codex."""
-
-__version__ = "0.1.0"
+"""Migration guard for previously linked loop-dev entrypoints."""

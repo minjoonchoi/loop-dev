@@ -7,11 +7,11 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from loop_dev.context import inventory
-from loop_dev.knowledge import KnowledgeBase
-from loop_dev.storage import LoopError, digest, file_hash
-from loop_dev.work import Work
-from loop_dev.workflows import source_context
+from loop_work.context import inventory
+from loop_work.knowledge import KnowledgeBase
+from loop_work.storage import LoopError, digest, file_hash
+from loop_work.work import Work
+from loop_work.workflows import source_context
 
 
 class WorkflowContextTests(unittest.TestCase):

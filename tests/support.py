@@ -9,9 +9,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from loop_dev.contract import AREAS
-from loop_dev.engine import Engine
-from loop_dev.storage import file_hash, head, read_json, write_json
+from loop_work.contract import AREAS
+from loop_work.engine import Engine
+from loop_work.storage import file_hash, head, read_json, write_json
 
 
 def fake_routing_policy():

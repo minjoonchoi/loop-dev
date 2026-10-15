@@ -123,7 +123,7 @@ def review_prompt(root, contract, discovery, phase, acceptance_ids, evidence, ba
                "session_analysis": (session_context or {}).get("reusable", []),
                "project_knowledge": (session_context or {}).get("knowledge", {}).get("reusable", [])}
     return (
-        "You are the independent reviewer for loop-dev. This is a READ-ONLY review, not an implementation task. "
+        "You are the independent reviewer for loop-work. This is a READ-ONLY review, not an implementation task. "
         "Do not execute repository workflows, edit files, spawn implementers, ask interactive questions, or perform external writes. "
         "Read applicable rules as review criteria; do not recurse into their orchestration workflow. "
         "Return only the requested structured result. Every finding needs source evidence and a concrete remedy. "

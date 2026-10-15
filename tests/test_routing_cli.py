@@ -8,10 +8,10 @@ import subprocess
 import sys
 from unittest.mock import patch
 
-from loop_dev.orchestration import MAX_CONTEXT_BYTES, Orchestration
-from loop_dev.harness import Harness
-from loop_dev.storage import LoopError, file_hash, locked, read_json, write_json
-from loop_dev.work import Work
+from loop_work.orchestration import MAX_CONTEXT_BYTES, Orchestration
+from loop_work.harness import Harness
+from loop_work.storage import LoopError, file_hash, locked, read_json, write_json
+from loop_work.work import Work
 from scripts.install import install
 from support import FAKE_CLI, ProjectTest
 from test_delegation import WORKER_BRANCH, assignment

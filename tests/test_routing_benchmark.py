@@ -10,8 +10,8 @@ import tempfile
 import unittest
 
 import test_benchmark as fixtures
-from loop_dev import bench_evolution, bench_report, bench_transport as transport, benchmark
-from loop_dev.storage import LoopError, digest, file_hash, read_json, write_json
+from loop_work import bench_evolution, bench_report, bench_transport as transport, benchmark
+from loop_work.storage import LoopError, digest, file_hash, read_json, write_json
 
 
 def catalog(models, efforts):

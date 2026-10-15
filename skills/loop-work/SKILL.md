@@ -1,9 +1,9 @@
 ---
-name: loop-dev
+name: loop-work
 description: Explicitly enable the goal-setting and work harness for the current Claude Code or Codex conversation. After invocation, route every input through it across goals, task types, directories and compaction until explicitly disabled. Ordinary task wording never activates it.
 ---
 
-# Loop Dev
+# Loop Work
 
 Orchestrate goals, feedback, delegation, evidence checks and reporting. Delegate
 investigation, planning, implementation and writing.

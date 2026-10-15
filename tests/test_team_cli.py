@@ -6,11 +6,11 @@ import subprocess
 import sys
 from unittest.mock import patch
 
-from loop_dev import providers
-from loop_dev.orchestration import Orchestration, worker_context
-from loop_dev.storage import LoopError, locked, read_json, write_json
-from loop_dev.work import Work
-from loop_dev.team import Team
+from loop_work import providers
+from loop_work.orchestration import Orchestration, worker_context
+from loop_work.storage import LoopError, locked, read_json, write_json
+from loop_work.work import Work
+from loop_work.team import Team
 from scripts.install import install
 from support import FAKE_CLI, ProjectTest, accept_fixture, fixture_assessment
 from test_delegation import WORKER_BRANCH, assignment
@@ -112,9 +112,9 @@ class TeamIntegrationTests(ProjectTest):
         self.assertTrue(instructions.startswith(original))
         self.assertIn("orchestration context", instructions)
         self.assertIn("SKILL.md", instructions)
-        self.assertTrue((self.root / ".agents/skills/loop-dev/loop.py").is_file())
-        self.assertTrue((self.root / ".loop/loop_dev/team.py").is_file())
-        self.assertTrue((self.root / ".loop/loop_dev/orchestration.py").is_file())
+        self.assertTrue((self.root / ".agents/skills/loop-work/loop.py").is_file())
+        self.assertTrue((self.root / ".loop/loop_work/team.py").is_file())
+        self.assertTrue((self.root / ".loop/loop_work/orchestration.py").is_file())
 
     def test_installed_common_team_and_orchestration_work_outside_git(self):
         install(self.root)
@@ -191,7 +191,7 @@ class TeamIntegrationTests(ProjectTest):
             self.feedback("correction", "new-review-input")
             return result
 
-        with patch("loop_dev.engine.providers.review", side_effect=changed):
+        with patch("loop_work.engine.providers.review", side_effect=changed):
             result = self.engine.gate()
         self.assertFalse(result["passed"])
         self.assertIn("feedback changed", result["error"])
@@ -211,7 +211,7 @@ class TeamIntegrationTests(ProjectTest):
             self.feedback("constraint", "retain-source")
             return result
 
-        with patch("loop_dev.engine.providers.review", side_effect=changed):
+        with patch("loop_work.engine.providers.review", side_effect=changed):
             result = self.engine.plan_review()
         self.assertFalse(result["passed"])
         self.assertIn("feedback changed", result["error"])

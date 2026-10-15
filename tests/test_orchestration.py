@@ -7,10 +7,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from loop_dev.harness import Harness
-from loop_dev.knowledge import KnowledgeBase
-from loop_dev.orchestration import MAX_CONTEXT_BYTES, Orchestration, worker_context
-from loop_dev.storage import LoopError, digest, read_json, write_json
+from loop_work.harness import Harness
+from loop_work.knowledge import KnowledgeBase
+from loop_work.orchestration import MAX_CONTEXT_BYTES, Orchestration, worker_context
+from loop_work.storage import LoopError, digest, read_json, write_json
 
 
 class OrchestrationTests(unittest.TestCase):

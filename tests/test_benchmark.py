@@ -11,8 +11,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from loop_dev import benchmark as bench, bench_report as reports, bench_transport as transport, bench_check
-from loop_dev.storage import LoopError, digest, file_hash, read_json, write_json
+from loop_work import benchmark as bench, bench_report as reports, bench_transport as transport, bench_check
+from loop_work.storage import LoopError, digest, file_hash, read_json, write_json
 
 SOURCE = Path(__file__).resolve().parents[1]
 
@@ -211,7 +211,7 @@ class ReportTests(unittest.TestCase):
             packet = json.loads(prompt.split('ARTIFACT DATA:\n')[1])
             seen.append((provider, model, outside_git, effort))
             return copy.deepcopy(self.ratings['samples'][packet['sample']]['reviews'][0])
-        with patch('loop_dev.bench_report.providers.structured_call', side_effect=call):
+        with patch('loop_work.bench_report.providers.structured_call', side_effect=call):
             value = reports.judge(self.root, 'claude', 'fixed-judge', 2, effort='high')
         self.assertEqual(len(seen), 24)
         self.assertEqual(set(seen), {('claude', 'fixed-judge', True, 'high')})
@@ -222,7 +222,7 @@ class ReportTests(unittest.TestCase):
         self.spec['evaluation'] = {'provider': 'claude', 'model': 'fixed-judge', 'effort': 'high', 'repeats': 2}
         self.index['manifest_hash'] = self.ratings['manifest_hash'] = digest(self.spec)
         self.save()
-        with patch('loop_dev.bench_report.providers.structured_call') as call, self.assertRaisesRegex(LoopError, 'frozen'):
+        with patch('loop_work.bench_report.providers.structured_call') as call, self.assertRaisesRegex(LoopError, 'frozen'):
             reports.judge(self.root, 'claude', 'fixed-judge', 2, effort='low')
         call.assert_not_called()
         with self.assertRaisesRegex(LoopError, 'frozen evaluation'):
@@ -248,10 +248,10 @@ class ReportTests(unittest.TestCase):
             output = self.base / ('failed-' + phase)
             def run(*args, **kwargs):
                 shutil.copytree(self.root, output)
-            with patch('loop_dev.bench_check.benchmark.run', side_effect=run), \
-                 patch('loop_dev.bench_check.bench_report.judge', side_effect=LoopError('judge unavailable') if phase == 'judge' else None), \
-                 patch('loop_dev.bench_check.bench_report.gate', side_effect=LoopError('Candidate changed')):
-                result = bench_check.check(self.spec['models'], self.spec['efforts'], candidate=SOURCE,
+            with patch('loop_work.bench_check.benchmark.run', side_effect=run), \
+                 patch('loop_work.bench_check.bench_report.judge', side_effect=LoopError('judge unavailable') if phase == 'judge' else None), \
+                 patch('loop_work.bench_check.bench_report.gate', side_effect=LoopError('Candidate changed')):
+                result = bench_check.check(self.spec['models'], self.spec['efforts'], candidate=SOURCE, history=self.base / "history",
                     suite=self.suite_path, output=output)
             self.assertEqual(result['verdict'], 'inconclusive')
             self.assertEqual(result['failure']['phase'], phase)
@@ -401,7 +401,7 @@ else:
     assert 'plan_mode_reasoning_effort=' + json.dumps(effort) in sys.argv
 session = 'worker-session' if prompt == '__NESTED__' else 'conversation-session'
 if prompt != '__NESTED__':
-    if prompt.startswith(('/loop-dev ', '$loop-dev ')):
+    if prompt.startswith(('/loop-work ', '$loop-work ')):
         result = subprocess.run([sys.executable, '.loop/loop.py', 'harness', 'on', '--provider', provider], capture_output=True, text=True, check=True)
     if 'nested-probe' in prompt:
         opposite = 'claude' if provider == 'codex' else 'codex'
@@ -439,8 +439,8 @@ class RunnerTests(unittest.TestCase):
 
     def test_full_check_evaluates_two_types_and_writes_actionable_reports(self):
         output = self.base / 'checked'
-        with patch('loop_dev.providers.shutil.which', side_effect=lambda p: self.actual.get(p)):
-            value = bench_check.check(self.models, self.efforts, candidate=SOURCE, suite=self.suite,
+        with patch('loop_work.providers.shutil.which', side_effect=lambda p: self.actual.get(p)):
+            value = bench_check.check(self.models, self.efforts, candidate=SOURCE, history=self.base / "history", suite=self.suite,
                 output=output, repeats=1, executables=self.actual, judge_provider='claude',
                 judge_model='independent-judge', judge_effort='xhigh')
         self.assertEqual(value['phase'], 'completed')
@@ -467,8 +467,8 @@ class RunnerTests(unittest.TestCase):
 
     def test_missing_cli_check_produces_setup_report_without_scores(self):
         output = self.base / 'missing-cli'
-        with patch('loop_dev.benchmark.shutil.which', return_value=None):
-            value = bench_check.check(self.models, self.efforts, candidate=SOURCE, suite=self.suite, output=output)
+        with patch('loop_work.benchmark.shutil.which', return_value=None):
+            value = bench_check.check(self.models, self.efforts, candidate=SOURCE, history=self.base / "history", suite=self.suite, output=output)
         self.assertEqual(value['verdict'], 'inconclusive')
         self.assertEqual(value['phase'], 'run')
         self.assertIn('Both CLI', value['failure']['error'])
@@ -476,7 +476,7 @@ class RunnerTests(unittest.TestCase):
         self.assertTrue(all(g['quality_mean'] is None for g in improvement['comparisons']))
         self.assertFalse((output / 'judgments.json').exists())
         with self.assertRaisesRegex(LoopError, 'new benchmark output'):
-            bench_check.check(self.models, self.efforts, candidate=SOURCE, suite=self.suite, output=output)
+            bench_check.check(self.models, self.efforts, candidate=SOURCE, history=self.base / "history", suite=self.suite, output=output)
 
     def test_multiple_cases_of_one_goal_type_are_rejected_before_execution(self):
         original = read_json(self.suite)
@@ -485,8 +485,8 @@ class RunnerTests(unittest.TestCase):
             for case, kind in zip(value['cases'], kinds):
                 case['kind'] = kind
             write_json(self.suite, value)
-            with patch('loop_dev.bench_check.benchmark.run') as run, self.assertRaisesRegex(LoopError, 'two distinct goal types'):
-                bench_check.check(self.models, self.efforts, candidate=SOURCE, suite=self.suite, dry_run=True)
+            with patch('loop_work.bench_check.benchmark.run') as run, self.assertRaisesRegex(LoopError, 'two distinct goal types'):
+                bench_check.check(self.models, self.efforts, candidate=SOURCE, history=self.base / "history", suite=self.suite, dry_run=True)
             run.assert_not_called()
 
     def test_standalone_script_dry_run_from_another_directory(self):
@@ -494,7 +494,7 @@ class RunnerTests(unittest.TestCase):
         result = subprocess.run([sys.executable, str(SOURCE / 'scripts/benchmark.py'),
             '--codex-model', self.models['codex'], '--codex-effort', 'medium',
             '--claude-model', self.models['claude'], '--claude-effort', 'high',
-            '--dry-run', '--output', str(output)], cwd=self.base, capture_output=True, text=True)
+            '--dry-run', '--history', str(self.base / 'history'), '--output', str(output)], cwd=self.base, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         value = json.loads(result.stdout)
         self.assertTrue(value['dry_run'])
@@ -509,7 +509,7 @@ class RunnerTests(unittest.TestCase):
         self.assertFalse(output.exists())
         for options in ({'output': SOURCE / 'invalid-run'}, {'judge_effort': ''}, {'judge_model': ''}):
             with self.assertRaises(LoopError):
-                bench_check.check(self.models, self.efforts, candidate=SOURCE, suite=self.suite, dry_run=True, **options)
+                bench_check.check(self.models, self.efforts, candidate=SOURCE, history=self.base / "history", suite=self.suite, dry_run=True, **options)
 
     def test_effort_conflicts_fail_before_calls_and_claude_env_is_local(self):
         trial = self.base / 'effort-trial'
@@ -607,7 +607,7 @@ class RunnerTests(unittest.TestCase):
         with self.assertRaises(LoopError): bench.load_suite(self.suite)
         self.suite = make_suite(self.base / 'other-suite')
         output = self.base / 'no-run'
-        with patch('loop_dev.benchmark.shutil.which', return_value=None), self.assertRaisesRegex(LoopError, 'Both CLI'):
+        with patch('loop_work.benchmark.shutil.which', return_value=None), self.assertRaisesRegex(LoopError, 'Both CLI'):
             bench.run(self.suite, SOURCE, self.models, ['codex'], 3, 1, 'test', output, efforts=self.efforts)
         self.assertFalse(output.exists())
 

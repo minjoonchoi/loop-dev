@@ -1,4 +1,4 @@
-# loop-dev repository instructions
+# loop-work repository instructions
 
 This repository builds the portable harness, not a target application. Read README.md
 and docs/architecture.md before behavior changes. Keep Claude Code/Codex behavior

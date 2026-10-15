@@ -13,7 +13,7 @@ manual checklist to operate the loop.
 
 ## Development inside an activated conversation
 
-The loop-dev skill explicitly enables the conversation once; `work.md` routes every
+The loop-work skill explicitly enables the conversation once; `work.md` routes every
 later input. Within that enabled session, an ordinary request such as "로그인 기능을
 완성해 줘" starts this workflow. Do not require another skill prefix, operating
 prompt, request for tests/reviews or redundant permission to use the loop. Outside

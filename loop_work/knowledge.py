@@ -49,7 +49,18 @@ def remote_identity(value, root):
 class KnowledgeBase:
     def __init__(self, home=None):
         configured = home or os.environ.get("LOOP_KB_HOME")
-        self.home = Path(configured).expanduser().resolve() if configured else Path.home() / ".local/share/loop-dev"
+        if configured:
+            self.home = Path(configured).expanduser().resolve()
+        else:
+            current = Path.home() / ".local/share/loop-work"
+            legacy = Path.home() / ".local/share/loop-dev"
+            if (legacy / "knowledge.sqlite3").exists():
+                if (current / "knowledge.sqlite3").exists() and current.resolve() != legacy.resolve():
+                    raise LoopError("Both loop-work and loop-dev knowledge databases exist; select the existing "
+                                    "records explicitly with LOOP_KB_HOME or --knowledge-home. No data was moved.")
+                self.home = legacy
+            else:
+                self.home = current
         self.home.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.path = self.home / "knowledge.sqlite3"
         with self.connection() as db:
