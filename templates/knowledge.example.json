@@ -1,0 +1,12 @@
+{
+  "id": "project-topic",
+  "scope": "project",
+  "kind": "fact",
+  "status": "confirmed",
+  "summary": "Replace with an evidence-supported fact; use draft or hypothesis for uncertain content",
+  "why": "Replace with a useful consequence, or omit this field",
+  "details": ["Replace with a distinct supporting fact, or omit details"],
+  "uncertainty": "Replace with a real unresolved limit, or omit this field",
+  "evidence": ["Replace with concrete references actually inspected"],
+  "paths": ["src/", "tests/"]
+}

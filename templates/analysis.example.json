@@ -1,0 +1,8 @@
+{
+  "id": "notes-storage",
+  "kind": "analysis",
+  "scope": "session",
+  "summary": "Replace with observed entry points, current behavior, consumers, limitations and test coverage.",
+  "evidence": ["Replace with concrete source/test references actually inspected"],
+  "paths": ["src/", "tests/", "pyproject.toml"]
+}

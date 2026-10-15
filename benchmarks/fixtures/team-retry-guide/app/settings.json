@@ -1,0 +1,1 @@
+{"max_attempts": 3, "delay_seconds": 2, "retry_statuses": [429, 503]}

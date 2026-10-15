@@ -1,0 +1,18 @@
+{
+  "baseline_head": "REPLACE_WITH_CURRENT_GIT_HEAD_OR_UNBORN",
+  "findings": [
+    "예시이며 실제 조사 결과가 아닙니다. 파일·라인·명령 결과를 조사하여 교체합니다."
+  ],
+  "gaps": [
+    {
+      "requirement_id": "R1",
+      "current_state": "실제 코드에서 메모 CLI·저장 계층·테스트 상태를 조사하여 기록",
+      "work_needed": "명세와 현재 상태의 차이를 구현할 작업으로 기록"
+    },
+    {
+      "requirement_id": "R2",
+      "current_state": "실제 오류 처리와 파일 보존 테스트를 조사하여 기록",
+      "work_needed": "미구현 실패 경로와 보존 조건을 구현할 작업으로 기록"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "summary": "Replace with the delivered explanation or document summary, including actual findings and uncertainty",
+  "outputs": ["Replace with the delivered file path or conversation answer reference"],
+  "checks": [
+    {"criterion_id": "C1", "satisfied": true, "evidence": "Replace with actual inspected sources and delivered coverage"},
+    {"criterion_id": "C2", "satisfied": true, "evidence": "Replace with the explicit limitations in the delivered result"}
+  ],
+  "knowledge": []
+}
